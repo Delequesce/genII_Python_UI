@@ -2,8 +2,7 @@ from matplotlib.figure import Figure
 import tkinter as tk
 import tkinter.ttk as ttk
 import numpy as np
-import serial
-import time
+import time, csv, serial
 from tkinter.filedialog import askopenfilename, asksaveasfilename
 from matplotlib.backends.backend_tkagg import (FigureCanvasTkAgg,  
 NavigationToolbar2Tk)
@@ -206,7 +205,8 @@ class GenII_Interface:
     def connectToDevice(self):
         ret = 0;
         try:
-            SerialObj = serial.Serial('/dev/ttyS3') # Port is immediately opened upon creation. 
+            #SerialObj = serial.Serial('/dev/ttyS3') # Port is immediately opened upon creation. 
+            SerialObj = serial.Serial('') # Port is immediately opened upon creation. 
         except:
             self.deviceStatus.set("Failed to Access COM Port")
             return
@@ -268,8 +268,40 @@ class GenII_Interface:
     
     def startHeating(self):
         return
-    
+
+    # Command board to begin taking measurements and sending data    
     def beginMeasurement(self):
+
+        # Open output file
+        output_file = open(self.str_filePath.get(), 'w')
+        csv_writer = csv.writer(output_file, delimier = ',')
+        HALF_BUFFER_LENGTH = 512;
+        
+
+        try: 
+            self.SerialObj.write(b'N')
+        except: 
+            self.eqcStatus.set("Failed to Start test to COM Port")
+            return
+        
+        # Data will be periodically transmitted by the device to the input buffer (1024 Bytes).
+
+        # Attempts to read half of the buffer. Returns when 512 bytes are read, 
+        # timeout is reached, or newline character is read
+        while 1:
+            data = self.SerialObj.read_until(size = HALF_BUFFER_LENGTH)
+
+            # Once we have a block of data, we need to write to file
+            for x in data:
+                csv_writer.writerow(x)
+
+            # Once new line character is sent or a timeout occurs, the length of data will be less than expected 
+            # and the program should stop reading
+            if len(data) < HALF_BUFFER_LENGTH:
+                break
+
+        output_file.close();
+        #print("All data successfully read\n")
         return
 
 
