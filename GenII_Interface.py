@@ -267,6 +267,12 @@ class GenII_Interface:
         return
     
     def startHeating(self):
+        try: 
+            self.SerialObj.write(b'H')
+        except: 
+            self.eqcStatus.set("Failed to Write to COM Port")
+            return
+        
         return
 
     # Command board to begin taking measurements and sending data    
