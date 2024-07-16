@@ -2,7 +2,8 @@ from matplotlib.figure import Figure
 import tkinter as tk
 import tkinter.ttk as ttk
 import numpy as np
-import time, csv, serial
+import time, csv, serial, sys, glob
+import serial.tools.list_ports
 from tkinter.filedialog import askopenfilename, asksaveasfilename
 from matplotlib.backends.backend_tkagg import (FigureCanvasTkAgg,  
 NavigationToolbar2Tk)
@@ -40,9 +41,8 @@ class GenII_Interface:
         #root.geometry("{}x{}+{}+{}".format(width, height, x_coordinate, y_coordinate))
         root.title("MIA Generation II Interface")
         style = ttk.Style(root)
-        root.tk.call('source', '../Azure-ttk-theme/azure.tcl')
-        #style.theme_use('azure')
-        root.tk.call("set_theme", "azure")
+        root.tk.call('source', 'Azure-ttk-theme/azure.tcl') # Imports TCL file for styling
+        style.theme_use('azure')
         style.configure("AccentButton", foreground = 'white')
 
         # Frames and canvases
@@ -51,9 +51,9 @@ class GenII_Interface:
         #fr_main.pack()
         
         # Buttons
-        btn_connect = ttk.Button(fr_main, text = "Connect to Device", style = "Accent.TButton", command = self.connectToDevice)
-        btn_EQC = ttk.Button(fr_main, text = "Perform Daily EQC", style = "Accent.TButton", command = self.performEQC)
-        btn_newTest = ttk.Button(fr_main, text = "Setup New Test", style = "Accent.TButton", command = self.forward)
+        btn_connect = ttk.Button(fr_main, text = "Connect to Device", style = "AccentButton", command = self.connectToDevice)
+        btn_EQC = ttk.Button(fr_main, text = "Perform Daily EQC", style = "AccentButton", command = self.performEQC)
+        btn_newTest = ttk.Button(fr_main, text = "Setup New Test", style = "AccentButton", command = self.forward)
         btn_connect.grid(row = 0, column = 0, pady = 5)
         btn_EQC.grid(row = 1, column = 0, pady = 5)
         btn_newTest.grid(row = 2, column = 0, pady = 5)
@@ -117,9 +117,9 @@ class GenII_Interface:
         #ent_filePath.bind("<1>", self.openSaveDialog) # Will launch when entry box is left-clicked
 
         # Buttons
-        btn_next = ttk.Button(fr_params, text = "Continue", style = "Accent.TButton", command = self.forward)
-        btn_back = ttk.Button(fr_params, text = "Back", style = "Accent.TButton", command = self.previous)
-        btn_fileEdit = ttk.Button(fr_filePath, text = "...", style = "Accent.TButton", command = self.openSaveDialog)
+        btn_next = ttk.Button(fr_params, text = "Continue", style = "AccentButton", command = self.forward)
+        btn_back = ttk.Button(fr_params, text = "Back", style = "AccentButton", command = self.previous)
+        btn_fileEdit = ttk.Button(fr_filePath, text = "...", style = "AccentButton", command = self.openSaveDialog)
         btn_next.grid(row = 0, column = 2, pady = 5)
         btn_back.grid(row = 1, column = 2, pady = 5)
         btn_fileEdit.grid(row = 0, column = 0) # Should be just to the left of the filepath text box
@@ -140,9 +140,9 @@ class GenII_Interface:
         fr_paramEst = ttk.Labelframe(fr_testWindow, text = "Current Parameter Estimates", labelanchor='n')
 
         # Components
-        btn_startHeating = ttk.Button(fr_leftInfo, text = "Start Heating", style = "Accent.TButton", command = self.startHeating)
-        btn_beginMeasurement = ttk.Button(fr_leftInfo, text = "Begin Measurement", style = "Accent.TButton", command = self.beginMeasurement)
-        btn_back  = ttk.Button(fr_leftInfo, text = "Back", style = "Accent.TButton", command = self.previous)
+        btn_startHeating = ttk.Button(fr_leftInfo, text = "Start Heating", style = "AccentButton", command = self.startHeating)
+        btn_beginMeasurement = ttk.Button(fr_leftInfo, text = "Begin Measurement", style = "AccentButton", command = self.beginMeasurement)
+        btn_back  = ttk.Button(fr_leftInfo, text = "Back", style = "AccentButton", command = self.previous)
 
         lbl_tempLabel = ttk.Label(fr_leftInfo, text="Current Temp (C):")
         lbl_currentTemp = ttk.Label(fr_leftInfo, textvariable=self.str_currentTemp)
@@ -204,34 +204,69 @@ class GenII_Interface:
     # Button Callback Functions
     def connectToDevice(self):
         ret = 0;
-        try:
-            #SerialObj = serial.Serial('/dev/ttyS3') # Port is immediately opened upon creation. 
-            SerialObj = serial.Serial('') # Port is immediately opened upon creation. 
-        except:
-            self.deviceStatus.set("Failed to Access COM Port")
-            return
 
-        SerialObj.baudrate = 115200
+        list = serial.tools.list_ports.comports()
+        connected = []
+        print("Connected COM ports:") 
+        for element in list:
+            connected.append(element.device)
+            print(str(element.device) + ": " + element.description)
+            if element.manufacturer == 'SEGGER':
+                genII_port = element.device
+
+        # if sys.platform.startswith('win'):
+        #     ports = ['COM%s' % (i+1) for i in range(256)]
+        # elif sys.platform.startswith('linux') or sys.platform.startswith('cygwin'):
+        #     ports = glob.glob('/dev/tty[A-Za-z]*')
+        # elif sys.platform.startswith('darwin'):
+        #     ports = glob.glob('/dev/tty.*')
+        # else:
+        #     raise EnvironmentError('Unsupported platform')
+
+        #port = input("Enter the requested port number to connect")
+        SerialObj = serial.Serial(baudrate = 115200, timeout = 5) # Port is immediately opened upon creation. 
+        SerialObj.port = genII_port
         SerialObj.bytesize = 8
         SerialObj.partiy = 'N'
         SerialObj.stopbits = 1
-        SerialObj.timeout = 5  # 5 second wait
 
-        time.sleep(3) 
+        try:
+            print("Attempting connection to %s" % str(genII_port))
+            #SerialObj = serial.Serial('/dev/ttyS3') # Port is immediately opened upon creation. 
+            SerialObj.open()
+        except Exception as e:
+            self.deviceStatus.set("Failed to Access COM Port")
+            print(e)
+            return
+
+        print("Port Succesfully Opened")
+
+        # Flush Buffers
+        SerialObj.reset_input_buffer()
+        SerialObj.reset_output_buffer()
+
+        # Wakeup and Check Connection Status Command. Function is blocking until timeout
         try: 
-            SerialObj.write(b'C') # Wakeup and Check Connection Status Command. Function is blocking until timeout
+            SerialObj.write(b'C') 
         except: # Timeout exception
              self.deviceStatus.set("Failed to Write to COM Port")
              return
-        time.sleep(1) # Wait for MCU to Process and write return data
+        
+        print("Connection Command Written to Port")
+
+        # Wait for MCU to Process and write return data
+
+        time.sleep(1)
+        
         try: 
-            statusReturn = SerialObj.read(1)  # MCU should have acknowledged write and responded with single byte, 'K'
+            statusReturn = SerialObj.read(SerialObj.in_waiting)  # MCU should have acknowledged write and responded with single byte, 'K'
         except: # Timeout exception
              self.deviceStatus.set("Failed to Read from COM Port")
              return
 
-        if statusReturn != b'K':
+        if not statusReturn or statusReturn != b'K':
             self.deviceStatus.set("Device Failed to Connect")
+            print("Device did not acknowledge connection request")
             return
         
         # Update UI with connection status
