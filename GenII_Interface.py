@@ -313,10 +313,14 @@ class GenII_Interface:
     # Command board to begin taking measurements and sending data    
     def beginMeasurement(self):
 
+        # Flush Buffers
+        self.SerialObj.reset_input_buffer()
+        self.SerialObj.reset_output_buffer()
+
         # Open output file
         output_file = open(self.str_filePath.get(), 'w', newline = '')
         csv_writer = csv.writer(output_file, delimiter = ',')
-        BUFFER_THRESHOLD = 200;
+        BUFFER_THRESHOLD = 512;
         #self.SerialObj.timeout = 10;
 
         try: 
@@ -331,27 +335,28 @@ class GenII_Interface:
         # timeout is reached, or newline character is read
         
         count = 0
+        rx_data = []
         while 1:
             data = self.SerialObj.read_until(size = BUFFER_THRESHOLD)
             if len(data) < 1:
                 print("Read Timeout")
                 return
-            # Once we have a block of data, we need to write to file
-            for x in data:
-                #print(count)
+            # Once we have a block of data, we need to write to memory
+            for msb, lsb in zip(data[0::2], data[1::2]):
+                #print(x)
+                rx_data.append((msb << 8) + lsb)
                 count+=1
-                csv_writer.writerow([x])
 
             # Once new line character is sent or a timeout occurs, the length of data will be less than expected 
             # and the program should stop reading
             print("Current Count: %d" % count)
-            if count > 800:
-                print("Write amount exceeded")
-                break
 
             if len(data) < BUFFER_THRESHOLD:
                 break
-
+        
+        # Finally write to file
+        for x in rx_data:
+            csv_writer.writerow([x])
         output_file.close();
         print("All data successfully read")
         return
