@@ -314,10 +314,10 @@ class GenII_Interface:
     def beginMeasurement(self):
 
         # Open output file
-        output_file = open(self.str_filePath.get(), 'w')
-        csv_writer = csv.writer(output_file, delimier = ',')
-        HALF_BUFFER_LENGTH = 512;
-        
+        output_file = open(self.str_filePath.get(), 'w', newline = '')
+        csv_writer = csv.writer(output_file, delimiter = ',')
+        BUFFER_THRESHOLD = 200;
+        #self.SerialObj.timeout = 10;
 
         try: 
             self.SerialObj.write(b'N')
@@ -329,20 +329,31 @@ class GenII_Interface:
 
         # Attempts to read half of the buffer. Returns when 512 bytes are read, 
         # timeout is reached, or newline character is read
+        
+        count = 0
         while 1:
-            data = self.SerialObj.read_until(size = HALF_BUFFER_LENGTH)
-
+            data = self.SerialObj.read_until(size = BUFFER_THRESHOLD)
+            if len(data) < 1:
+                print("Read Timeout")
+                return
             # Once we have a block of data, we need to write to file
             for x in data:
-                csv_writer.writerow(x)
+                #print(count)
+                count+=1
+                csv_writer.writerow([x])
 
             # Once new line character is sent or a timeout occurs, the length of data will be less than expected 
             # and the program should stop reading
-            if len(data) < HALF_BUFFER_LENGTH:
+            print("Current Count: %d" % count)
+            if count > 800:
+                print("Write amount exceeded")
+                break
+
+            if len(data) < BUFFER_THRESHOLD:
                 break
 
         output_file.close();
-        #print("All data successfully read\n")
+        print("All data successfully read")
         return
 
 
