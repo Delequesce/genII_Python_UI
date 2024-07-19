@@ -17,6 +17,7 @@ class GenII_Interface:
         self.eqcStatus.set("EQC has not been run today")
         self.frameList = []
         self.frame_ctr = -1
+        self.plot1 = None
         self.SerialObj = None
         self.str_filePath = tk.StringVar()
         self.str_runT = tk.StringVar(value = "30")
@@ -142,6 +143,7 @@ class GenII_Interface:
         # Components
         btn_startHeating = ttk.Button(fr_leftInfo, text = "Start Heating", style = "AccentButton", command = self.startHeating)
         btn_beginMeasurement = ttk.Button(fr_leftInfo, text = "Begin Measurement", style = "AccentButton", command = self.beginMeasurement)
+        btn_loadData = ttk.Button(fr_leftInfo, text = "Load Data", style = "AccentButton", command = self.loadAndPlotData)
         btn_back  = ttk.Button(fr_leftInfo, text = "Back", style = "AccentButton", command = self.previous)
 
         lbl_tempLabel = ttk.Label(fr_leftInfo, text="Current Temp (C):")
@@ -162,7 +164,8 @@ class GenII_Interface:
         lbl_tempLabel.grid(row = 1, column = 0, pady = 5)
         lbl_currentTemp.grid(row = 1, column = 1, pady = 5)
         btn_beginMeasurement.grid(row = 2, column = 0, columnspan=2)
-        btn_back.grid(row = 3, column = 0, columnspan=2)
+        btn_loadData.grid(row=3, column = 0, columnspan=2)
+        btn_back.grid(row = 4, column = 0, columnspan=2)
         lbl_tpeak.grid(row = 0, column = 0, padx = 5, pady = 5)
         lbl_deltaEps.grid(row = 1, column = 0, padx = 5, pady = 5)
         lbl_tpeak_est.grid(row = 0, column = 2, padx = 5, pady = 5)
@@ -175,11 +178,12 @@ class GenII_Interface:
         plot1 = fig.add_axes([0.1, 0.3, 0.8, 0.6], autoscale_on = True)
         plot1.set_xlabel("Time (s)")
         plot1.set_ylabel("Capacitance (pF)")
+        self.plot1 = plot1
 
         # Visual Frame
-        canvas = FigureCanvasTkAgg(fig, master = fr_vis)
-        canvas.draw()
-        canvas.get_tk_widget().pack()
+        self.canvas = FigureCanvasTkAgg(fig, master = fr_vis)
+        self.canvas.draw()
+        self.canvas.get_tk_widget().pack()
 
         return fr_testWindow
 
@@ -200,6 +204,9 @@ class GenII_Interface:
         self.str_filePath.set(saveDataFilePath)
         return
 
+    def loadAndPlotData(self):
+        readDataFilePath = askopenfilename(defaultextension=".csv", filetypes=[("CSV Files", "*.csv")])
+        self.plotData(readDataFilePath)
 
     # Button Callback Functions
     def connectToDevice(self):
@@ -317,9 +324,16 @@ class GenII_Interface:
         self.SerialObj.reset_input_buffer()
         self.SerialObj.reset_output_buffer()
 
-        # Open output file
-        output_file = open(self.str_filePath.get(), 'w', newline = '')
-        csv_writer = csv.writer(output_file, delimiter = ',')
+        filePath = self.str_filePath.get()
+        # Clear output file and write header
+        with open(filePath, 'w', newline = '') as output_file:
+            csv_writer = csv.writer(output_file, delimiter = ',', quoting = csv.QUOTE_NONNUMERIC, quotechar='|')
+            csv_writer.writerow(['Sample', 'Measurement'])
+        
+        # Reopen file in append mode to continuously write data
+        output_file = open(filePath, 'a', newline = '')
+        csv_writer = csv.writer(output_file, delimiter = ',', quoting=csv.QUOTE_NONNUMERIC)
+
         BUFFER_THRESHOLD = 512;
         #self.SerialObj.timeout = 10;
 
@@ -335,6 +349,8 @@ class GenII_Interface:
         # timeout is reached, or newline character is read
         
         count = 0
+        max_code = 2**16 -1
+        ref_v = 3
         rx_data = []
         while 1:
             data = self.SerialObj.read_until(size = BUFFER_THRESHOLD)
@@ -344,7 +360,7 @@ class GenII_Interface:
             # Once we have a block of data, we need to write to memory
             for msb, lsb in zip(data[0::2], data[1::2]):
                 #print(x)
-                rx_data.append((msb << 8) + lsb)
+                rx_data.append(ref_v * ((msb << 8) + lsb)/max_code)
                 count+=1
 
             # Once new line character is sent or a timeout occurs, the length of data will be less than expected 
@@ -355,10 +371,32 @@ class GenII_Interface:
                 break
         
         # Finally write to file
+        i = 1
         for x in rx_data:
-            csv_writer.writerow([x])
+            csv_writer.writerow([i, x])
+            i+=1
         output_file.close();
         print("All data successfully read")
+        
+        # Plot Data
+        self.plotData(filePath)
+        return
+
+    # Loads data from a file and plots it on the interface
+    def plotData(self, readDataFilePath):
+        
+        xdata = []
+        ydata = []
+        self.plot1.clear()
+        with open(readDataFilePath, newline='') as read_file:
+            csv_reader = csv.DictReader(read_file, quoting=csv.QUOTE_NONNUMERIC, delimiter=',', quotechar='|')
+            for row in csv_reader:
+               xdata.append(row['Sample'])
+               ydata.append(row['Measurement'])
+        self.plot1.plot(xdata, ydata, marker = 'o', fillstyle = 'full')
+        self.plot1.set_xlim(-1, np.max(xdata)+1)
+        self.plot1.set_ylim(np.min(ydata)*0.9 - 1, np.max(ydata)*1.3 + 1)
+        self.canvas.draw()
         return
 
 
