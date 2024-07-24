@@ -334,11 +334,12 @@ class GenII_Interface:
         output_file = open(filePath, 'a', newline = '')
         csv_writer = csv.writer(output_file, delimiter = ',', quoting=csv.QUOTE_NONNUMERIC)
 
-        BUFFER_THRESHOLD = 512;
+        BUFFER_THRESHOLD = 1024;
         #self.SerialObj.timeout = 10;
 
         try: 
             self.SerialObj.write(b'N')
+            self.SerialObj.timeout = 2
         except: 
             self.eqcStatus.set("Failed to Start test to COM Port")
             return
@@ -349,40 +350,32 @@ class GenII_Interface:
         # Attempts to read half of the buffer. Returns when 512 bytes are read, 
         # timeout is reached, or newline character is read
         
-        #count = 0
         max_code = 2**16 -1
         ref_v = 3
         rx_data = []
-
-        # Loop to run for each measurement (time point)
         i = 1
-        for r in range(N_Measurements):
-            while 1:
-                data = self.SerialObj.read_until(size = BUFFER_THRESHOLD)
-                if len(data) < 1:
-                    print("Read Timeout")
-                    return
-                # Once we have a block of data, we need to write to memory
-                for msb, lsb in zip(data[0::2], data[1::2]):
+        # Loop to collect data from device
+        while 1:
+            data = self.SerialObj.read_until(b"eor") # Read until new line from device or until timeout (5000 msec)
+            v = len(data)
+            data = data[1:-3] # Remove stop bytes
+            print("Data Read: %d" % v)
+            if len(data) < 2:
+                break
+            for msb, lsb in zip(data[0::2], data[1::2]):
                     #print(x)
                     rx_data.append(ref_v * ((msb << 8) + lsb)/max_code)
                     #count+=1
+            self.SerialObj.write(b'K') # Send all clear to receive more data
 
-                # Once new line character is sent or a timeout occurs, the length of data will be less than expected 
-                # and the program should stop reading
-                #print("Current Count: %d" % count)
-
-                if len(data) < BUFFER_THRESHOLD:
-                    break
-            
-            # Finally write to file
-            for x in rx_data:
-                csv_writer.writerow([i, x])
-                i+=1
+        # Finally write to file
+        for x in rx_data:
+            csv_writer.writerow([i, x])
+            i+=1
         
         # End of Experiment
         output_file.close();
-        print("All data successfully read")
+        print("%d samples successfully read" % (i-1))
         
         # Plot Data
         self.plotData(filePath)
