@@ -358,13 +358,14 @@ class GenII_Interface:
         while 1:
             data = self.SerialObj.read_until(b"eor") # Read until new line from device or until timeout (5000 msec)
             v = len(data)
-            data = data[1:-3] # Remove stop bytes
-            print("Data Read: %d" % v)
+            data = data[0:-3] # Remove stop bytes
+            #print("Data Read: %d" % v)
             if len(data) < 2:
                 break
             for msb, lsb in zip(data[0::2], data[1::2]):
-                    #print(x)
-                    rx_data.append(ref_v * ((msb << 8) + lsb)/max_code)
+                    parsed_data = ref_v * ((msb << 8) + lsb)/max_code
+                    #print(parsed_data)
+                    rx_data.append(parsed_data)
                     #count+=1
             self.SerialObj.write(b'K') # Send all clear to receive more data
 
