@@ -3,6 +3,7 @@ import tkinter as tk
 import tkinter.ttk as ttk
 import numpy as np
 import time, csv, serial, sys, glob
+import struct
 import serial.tools.list_ports
 from tkinter.filedialog import askopenfilename, asksaveasfilename
 from matplotlib.backends.backend_tkagg import (FigureCanvasTkAgg,  
@@ -339,35 +340,44 @@ class GenII_Interface:
 
         try: 
             self.SerialObj.write(b'N')
-            self.SerialObj.timeout = 2
+            self.SerialObj.timeout = 5
         except: 
             self.eqcStatus.set("Failed to Start test to COM Port")
             return
         
         # Data will be periodically transmitted by the device to the input buffer (1024 Bytes).
-        N_Measurements = 10
-
-        # Attempts to read half of the buffer. Returns when 512 bytes are read, 
-        # timeout is reached, or newline character is read
+        count = 0;
+        exit_code = bytearray([0, 1, 2, 3]) 
         
-        max_code = 2**16 -1
-        ref_v = 3
+        # 32b float format
+        mantissa = 23
+        exponent = 8;
+        sign = 1;
+
+        # Read data 4 bytes at a time 
         rx_data = []
         i = 1
         # Loop to collect data from device
         while 1:
-            data = self.SerialObj.read_until(b"eor") # Read until new line from device or until timeout (5000 msec)
-            v = len(data)
-            data = data[0:-3] # Remove stop bytes
-            #print("Data Read: %d" % v)
-            if len(data) < 2:
-                break
-            for msb, lsb in zip(data[0::2], data[1::2]):
-                    parsed_data = ref_v * ((msb << 8) + lsb)/max_code
-                    #print(parsed_data)
-                    rx_data.append(parsed_data)
+            data = self.SerialObj.read_until(size=4) # Read single 32 bit value
+            #print(" ".join(hex(n) for n in data))
+            if data == exit_code:
+                count+=1
+                if count == 3:
+                    break
+                continue
+            # Floating point deconstruct
+            if len(data) > 1:
+                #s = 1-2*(data[0] & 0x80);
+                #e = (data[0] & 0x7F)*2 + ((data[1] & 0x80) >> 7) -127;
+                #m = ((data[1] & 0x7F) << 16) + (data[2] << 8) + data[3]; 
+                #val = s * (2**e) * m;
+                val = np.sqrt(struct.unpack('>f', data)[0])
+                rx_data.append(val)
+                #print("Data: %d, %d, %d" % (s, e, m))
+                print(val)
                     #count+=1
-            self.SerialObj.write(b'K') # Send all clear to receive more data
+            #self.SerialObj.write(b'K') # Send all clear to receive more data
 
         # Finally write to file
         for x in rx_data:
