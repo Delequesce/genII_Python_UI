@@ -329,7 +329,7 @@ class GenII_Interface:
         # Clear output file and write header
         with open(filePath, 'w', newline = '') as output_file:
             csv_writer = csv.writer(output_file, delimiter = ',', quoting = csv.QUOTE_NONNUMERIC, quotechar='|')
-            csv_writer.writerow(['Sample', 'Measurement'])
+            csv_writer.writerow(['Time', 'C', 'G'])
         
         # Reopen file in append mode to continuously write data
         output_file = open(filePath, 'a', newline = '')
@@ -355,33 +355,36 @@ class GenII_Interface:
         sign = 1;
 
         # Read data 4 bytes at a time 
-        rx_data = []
+        C_data = []
+        G_data = []
         i = 1
         # Loop to collect data from device
         while 1:
-            data = self.SerialObj.read_until(size=4) # Read single 32 bit value
-            #print(" ".join(hex(n) for n in data))
-            if data == exit_code:
+            data = self.SerialObj.read_until(expected = exit_code, size=8) # Read both 32 bit values
+            print(" ".join(hex(n) for n in data))
+            if data[0:4] == exit_code:
                 count+=1
                 if count == 3:
                     break
                 continue
             # Floating point deconstruct
-            if len(data) > 1:
+            if len(data) == 8:
                 #s = 1-2*(data[0] & 0x80);
                 #e = (data[0] & 0x7F)*2 + ((data[1] & 0x80) >> 7) -127;
                 #m = ((data[1] & 0x7F) << 16) + (data[2] << 8) + data[3]; 
                 #val = s * (2**e) * m;
-                val = np.sqrt(struct.unpack('>f', data)[0])
-                rx_data.append(val)
+                Cval = np.sqrt(struct.unpack('>f', data[:4])[0])
+                Gval = np.sqrt(struct.unpack('>f', data[4:])[0])
+                C_data.append(Cval)
+                G_data.append(Gval)
                 #print("Data: %d, %d, %d" % (s, e, m))
-                print(val)
+                print("C = %f, G = %f" % (Cval, Gval));
                     #count+=1
             #self.SerialObj.write(b'K') # Send all clear to receive more data
 
         # Finally write to file
-        for x in rx_data:
-            csv_writer.writerow([i, x])
+        for C, G in zip(C_data, G_data):
+            csv_writer.writerow([i, C, G])
             i+=1
         
         # End of Experiment
@@ -401,8 +404,8 @@ class GenII_Interface:
         with open(readDataFilePath, newline='') as read_file:
             csv_reader = csv.DictReader(read_file, quoting=csv.QUOTE_NONNUMERIC, delimiter=',', quotechar='|')
             for row in csv_reader:
-               xdata.append(row['Sample'])
-               ydata.append(row['Measurement'])
+               xdata.append(row['Time'])
+               ydata.append(row['C'])
         self.plot1.plot(xdata, ydata, marker = 'o', fillstyle = 'full')
         self.plot1.set_xlim(-1, np.max(xdata)+1)
         self.plot1.set_ylim(np.min(ydata)*0.9 - 1, np.max(ydata)*1.3 + 1)
