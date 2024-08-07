@@ -12,6 +12,8 @@ NavigationToolbar2Tk)
 class GenII_Interface:
 
     def __init__(self, root):
+
+        self.root = root
         self.deviceStatus = tk.StringVar()
         self.deviceStatus.set("No Devices Connected")
         self.eqcStatus = tk.StringVar()
@@ -20,6 +22,8 @@ class GenII_Interface:
         self.frame_ctr = -1
         self.plot1 = None
         self.SerialObj = None
+
+        # Variables for labels and entries
         self.str_filePath = tk.StringVar()
         self.str_runT = tk.StringVar(value = "30")
         self.str_incTemp = tk.StringVar(value = "37")
@@ -28,10 +32,18 @@ class GenII_Interface:
         self.str_deltaEps_est = tk.StringVar(value = "0")
         self.str_tpeak_est_conf = tk.StringVar(value = "0%")
         self.str_deltaEps_est_conf = tk.StringVar(value = "0%")
+
+        # Frames
         self.frameList.append(self.createTopWindow(root)) # Create a top window element for root instance
         self.frameList.append(self.createParamWindow(root))
         self.frameList.append(self.creatTestRunWindow(root))
+
+        # Other
+        self.exit_code = bytearray([0, 1, 2, 3]) 
+
+        # Initialize first frame
         self.forward()
+        
 
     def createTopWindow(self, root):
         root.minsize(root.winfo_width(), root.winfo_height())
@@ -249,12 +261,11 @@ class GenII_Interface:
 
         print("Port Succesfully Opened")
 
-        # Flush Buffers
-        SerialObj.reset_input_buffer()
         SerialObj.reset_output_buffer()
 
         # Wakeup and Check Connection Status Command. Function is blocking until timeout
         try: 
+            SerialObj.reset_input_buffer()
             SerialObj.write(b'C') 
         except: # Timeout exception
              self.deviceStatus.set("Failed to Write to COM Port")
@@ -267,22 +278,29 @@ class GenII_Interface:
         time.sleep(1)
         
         try: 
-            statusReturn = SerialObj.read(SerialObj.in_waiting)  # MCU should have acknowledged write and responded with single byte, 'K'
+            statusReturn = SerialObj.readline(1)[0]  # MCU should have acknowledged write and responded with single byte, 'K'
         except: # Timeout exception
              self.deviceStatus.set("Failed to Read from COM Port")
              return
-
-        if not statusReturn or statusReturn != b'K':
+        if statusReturn != 75: # Ascii 'K'
             self.deviceStatus.set("Device Failed to Connect")
             print("Device did not acknowledge connection request")
             return
-        
+
         # Update UI with connection status
         self.deviceStatus.set("Device Successfully Connected")
         self.cv_statusLights.itemconfig(self.light_connect, fill="green")
 
         # Return open serial object for future communications
         self.SerialObj = SerialObj
+
+        # Flush Buffers to await new temperature data 
+        self.SerialObj.reset_input_buffer()
+        self.SerialObj.reset_output_buffer()
+
+        # Call periodic read
+        self.SerialObj.timeout = 0 # No timeout
+        self.processInputs()
     
     def performEQC(self):
         try: 
@@ -292,7 +310,7 @@ class GenII_Interface:
             return
         
         self.eqcStatus.set("Waiting for EQC to complete")
-        time.after(3000, self.finishEQC) # Non-blocking wait until calibration has finished
+        self.root.after(3000, self.finishEQC) # Non-blocking wait until calibration has finished
         return
     
     def finishEQC(self):
@@ -318,14 +336,43 @@ class GenII_Interface:
         
         return
 
+    # General handler function for serial comms
+    def processInputs(self):
+        self.SerialObj.timeout = 0
+        line = self.SerialObj.readline().decode(encoding='ascii')
+        if len(line) < 1:
+            self.io_task = self.root.after(500, self.processInputs) # Schedule new read in 500 msec
+            return
+        
+        print(line)
+        print(type(line))
+        messageString = line[1:-1]
+        match line[0]:
+            case 'E': # Error Code
+                print(messageString)
+            case 'D': # Data (C and G)
+                C = messageString[:4]
+                G = messageString[4:]
+                print("Capacitance: %s\n Conductance: %s" % (C, G))
+                self.CData.append(C)
+                self.GData.append(G)
+            case 'C': # Calibration return values
+                Zfb_real = messageString[:4]
+                Zfb_imag = messageString[4:]
+                print("New Calibration Value: %s + %s j" % (Zfb_real, Zfb_imag))
+            case 'T': # Temperature Reading
+                print("Temperature: %s" % messageString)
+                self.str_currentTemp.set(messageString)
+            case _: # No match 
+                print("Invalid Read")
+
+        self.io_task = self.root.after(500, self.processInputs) # Schedule new read in 500 msec
+
     # Command board to begin taking measurements and sending data    
     def beginMeasurement(self):
 
-        # Flush Buffers
-        self.SerialObj.reset_input_buffer()
-        self.SerialObj.reset_output_buffer()
-
         filePath = self.str_filePath.get()
+
         # Clear output file and write header
         with open(filePath, 'w', newline = '') as output_file:
             csv_writer = csv.writer(output_file, delimiter = ',', quoting = csv.QUOTE_NONNUMERIC, quotechar='|')
@@ -333,67 +380,38 @@ class GenII_Interface:
         
         # Reopen file in append mode to continuously write data
         output_file = open(filePath, 'a', newline = '')
-        csv_writer = csv.writer(output_file, delimiter = ',', quoting=csv.QUOTE_NONNUMERIC)
+        self.csv_writer = csv.writer(output_file, delimiter = ',', quoting=csv.QUOTE_NONNUMERIC)
 
-        BUFFER_THRESHOLD = 1024;
-        #self.SerialObj.timeout = 10;
+        # Reinitialize data vectors
+        self.CData = []
+        self.GData = []
 
+        # Send command to device to start measurement. Cancel reads during this process
+        #tk.after_cancel(self.io_task)
         try: 
+            self.SerialObj.timeout = 1
             self.SerialObj.write(b'N')
-            self.SerialObj.timeout = 5
         except: 
             self.eqcStatus.set("Failed to Start test to COM Port")
             return
         
-        # Data will be periodically transmitted by the device to the input buffer (1024 Bytes).
-        count = 0;
-        exit_code = bytearray([0, 1, 2, 3]) 
-        
-        # 32b float format
-        mantissa = 23
-        exponent = 8;
-        sign = 1;
-
-        # Read data 4 bytes at a time 
-        C_data = []
-        G_data = []
-        i = 1
-        # Loop to collect data from device
-        while 1:
-            data = self.SerialObj.read_until(expected = exit_code, size=8) # Read both 32 bit values
-            print(" ".join(hex(n) for n in data))
-            if data[0:4] == exit_code:
-                count+=1
-                if count == 3:
-                    break
-                continue
-            # Floating point deconstruct
-            if len(data) == 8:
-                #s = 1-2*(data[0] & 0x80);
-                #e = (data[0] & 0x7F)*2 + ((data[1] & 0x80) >> 7) -127;
-                #m = ((data[1] & 0x7F) << 16) + (data[2] << 8) + data[3]; 
-                #val = s * (2**e) * m;
-                Cval = np.sqrt(struct.unpack('>f', data[:4])[0])
-                Gval = np.sqrt(struct.unpack('>f', data[4:])[0])
-                C_data.append(Cval)
-                G_data.append(Gval)
-                #print("Data: %d, %d, %d" % (s, e, m))
-                print("C = %f, G = %f" % (Cval, Gval));
-                    #count+=1
-            #self.SerialObj.write(b'K') # Send all clear to receive more data
-
-        # Finally write to file
-        for C, G in zip(C_data, G_data):
-            csv_writer.writerow([i, C, G])
-            i+=1
-        
-        # End of Experiment
-        output_file.close();
-        print("%d samples successfully read" % (i-1))
-        
-        # Plot Data
-        self.plotData(filePath)
+        # After function exits, input processing thread will continue to run and handle incoming data
+        #self.io_task = tk.after(100, self.processInputs) # Schedule new read in 500 msec
         return
+
+    # def writeAndPlot(self):
+    #     # Finally write to file
+    #     for C, G in zip(C_data, G_data):
+    #         self.csv_writer.writerow([i, C, G])
+    #         i+=1
+        
+    #     # End of Experiment
+    #     output_file.close();
+    #     print("%d samples successfully read" % (i-1))
+        
+    #     # Plot Data
+    #     self.plotData(filePath)
+    #     return
 
     # Loads data from a file and plots it on the interface
     def plotData(self, readDataFilePath):
