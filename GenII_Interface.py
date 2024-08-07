@@ -18,6 +18,8 @@ class GenII_Interface:
         self.deviceStatus.set("No Devices Connected")
         self.eqcStatus = tk.StringVar()
         self.eqcStatus.set("EQC has not been run today")
+        self.calibStatus = tk.StringVar()
+        self.calibStatus.set("Calibration has not been run today")
         self.frameList = []
         self.frame_ctr = -1
         self.plot1 = None
@@ -39,7 +41,9 @@ class GenII_Interface:
         self.frameList.append(self.creatTestRunWindow(root))
 
         # Other
-        self.exit_code = bytearray([0, 1, 2, 3]) 
+        self.exit_code = bytearray([0, 1, 2, 3])
+        self.CData = []
+        self.GData = []
 
         # Initialize first frame
         self.forward()
@@ -67,10 +71,12 @@ class GenII_Interface:
         # Buttons
         btn_connect = ttk.Button(fr_main, text = "Connect to Device", style = "AccentButton", command = self.connectToDevice)
         btn_EQC = ttk.Button(fr_main, text = "Perform Daily EQC", style = "AccentButton", command = self.performEQC)
+        btn_calib = ttk.Button(fr_main, text = "Perform Calibration", style = "AccentButton", command = self.performCalibration)
         btn_newTest = ttk.Button(fr_main, text = "Setup New Test", style = "AccentButton", command = self.forward)
         btn_connect.grid(row = 0, column = 0, pady = 5)
         btn_EQC.grid(row = 1, column = 0, pady = 5)
-        btn_newTest.grid(row = 2, column = 0, pady = 5)
+        btn_calib.grid(row = 2, column = 0, pady = 5)
+        btn_newTest.grid(row = 3, column = 0, pady = 5)
 
         # Status Lights
         root.update()
@@ -89,8 +95,10 @@ class GenII_Interface:
         # Labels
         lbl_deviceStatus = ttk.Label(fr_main, textvariable=self.deviceStatus)
         lbl_eqcStatus = ttk.Label(fr_main, textvariable = self.eqcStatus)
+        lbl_calibStatus = ttk.Label(fr_main, textvariable = self.calibStatus)
         lbl_deviceStatus.grid(row = 0, column = 2, padx = 5, pady = 5)
         lbl_eqcStatus.grid(row = 1, column = 2, padx = 5, pady = 5)
+        lbl_calibStatus.grid(row = 2, column = 2, padx = 5, pady = 5)
 
         #root.update()
 
@@ -302,26 +310,47 @@ class GenII_Interface:
         self.SerialObj.timeout = 0 # No timeout
         self.processInputs()
     
+
+    def performCalibration(self):
+        try: 
+            self.SerialObj.write(b'B')
+        except: 
+            self.calibStatus.set("Failed to Write to COM Port")
+            return
+        
+        self.calibStatus.set("Waiting for Calibration to complete")
+
+    def finishCalibration(self, Zfb_real, Zfb_imag):
+
+        #if Zfb_real == 0:
+        #   self.eqcStatus.set("Calibration Failed")
+        #    return
+
+        print("New Calibration Value: %s + %s j" % (Zfb_real, Zfb_imag))
+    
+        self.eqcStatus.set("Calibration Successful")
+        return
+
+
     def performEQC(self):
         try: 
             self.SerialObj.write(b'Q')
         except: 
             self.eqcStatus.set("Failed to Write to COM Port")
             return
-        
+        self.cv_statusLights.itemconfig(self.light_EQC, fill="yellow")
         self.eqcStatus.set("Waiting for EQC to complete")
-        self.root.after(3000, self.finishEQC) # Non-blocking wait until calibration has finished
+        #self.root.after(3000, self.finishEQC) # Non-blocking wait until calibration has finished
         return
     
-    def finishEQC(self):
-        try: 
-            EQCReturn = self.SerialObj.read(1)  # MCU should have acknowledged write and responded with single byte, 'K'
-        except: # Timeout exception
-             self.eqcStatus.set("Failed to Read from COM Port")
-             return
-        
-        if EQCReturn != b'K':
+    def finishEQC(self, rms_error):
+
+        if rms_error > 10:
+            self.cv_statusLights.itemconfig(self.light_EQC, fill="red")
+            self.eqcStatus.set("EQC Failed")
             return
+
+        print("EQC error value: %0.3f" % rms_error)
     
         self.cv_statusLights.itemconfig(self.light_EQC, fill="green")
         self.eqcStatus.set("EQC Passed")
@@ -340,47 +369,50 @@ class GenII_Interface:
     def processInputs(self):
         self.SerialObj.timeout = 0
         line = self.SerialObj.readline().decode(encoding='ascii')
-        if len(line) < 1:
-            self.io_task = self.root.after(500, self.processInputs) # Schedule new read in 500 msec
+        n_line = len(line)
+        half_n = round(n_line/2)
+        if n_line < 1:
+            self.io_task = self.root.after(IOSLEEPTIME, self.processInputs) # Schedule new read in 500 msec
             return
         
-        print(line)
-        print(type(line))
         messageString = line[1:-1]
         match line[0]:
             case 'E': # Error Code
                 print(messageString)
             case 'D': # Data (C and G)
-                C = messageString[:4]
-                G = messageString[4:]
-                print("Capacitance: %s\n Conductance: %s" % (C, G))
+                C = messageString[:half_n]
+                G = messageString[half_n:]
+                print("Capacitance: %s\nConductance: %s" % (C, G))
                 self.CData.append(C)
                 self.GData.append(G)
             case 'C': # Calibration return values
-                Zfb_real = messageString[:4]
-                Zfb_imag = messageString[4:]
-                print("New Calibration Value: %s + %s j" % (Zfb_real, Zfb_imag))
+                #print(messageString)
+                self.finishCalibration(messageString[:half_n], messageString[half_n:])
+            case 'X': # Measurement finish
+                self.finishTest()
+            case 'Q':
+                self.finishEQC(messageString)
             case 'T': # Temperature Reading
                 print("Temperature: %s" % messageString)
                 self.str_currentTemp.set(messageString)
             case _: # No match 
                 print("Invalid Read")
 
-        self.io_task = self.root.after(500, self.processInputs) # Schedule new read in 500 msec
+        self.io_task = self.root.after(IOSLEEPTIME, self.processInputs) # Schedule new read in 500 msec
 
     # Command board to begin taking measurements and sending data    
     def beginMeasurement(self):
 
-        filePath = self.str_filePath.get()
+        self.filePath = self.str_filePath.get()
 
         # Clear output file and write header
-        with open(filePath, 'w', newline = '') as output_file:
+        with open(self.filePath, 'w', newline = '') as output_file:
             csv_writer = csv.writer(output_file, delimiter = ',', quoting = csv.QUOTE_NONNUMERIC, quotechar='|')
             csv_writer.writerow(['Time', 'C', 'G'])
         
         # Reopen file in append mode to continuously write data
-        output_file = open(filePath, 'a', newline = '')
-        self.csv_writer = csv.writer(output_file, delimiter = ',', quoting=csv.QUOTE_NONNUMERIC)
+        self.output_file = open(self.filePath, 'a', newline = '')
+        self.csv_writer = csv.writer(self.output_file, delimiter = ',', quoting=csv.QUOTE_NONNUMERIC)
 
         # Reinitialize data vectors
         self.CData = []
@@ -398,42 +430,43 @@ class GenII_Interface:
         # After function exits, input processing thread will continue to run and handle incoming data
         #self.io_task = tk.after(100, self.processInputs) # Schedule new read in 500 msec
         return
-
-    # def writeAndPlot(self):
-    #     # Finally write to file
-    #     for C, G in zip(C_data, G_data):
-    #         self.csv_writer.writerow([i, C, G])
-    #         i+=1
+    
+    def finishTest(self):
+        i = 0;
+        for C, G in zip(self.CData, self.GData):
+            self.csv_writer.writerow([i, C, G])
+            i+=1
         
-    #     # End of Experiment
-    #     output_file.close();
-    #     print("%d samples successfully read" % (i-1))
+        # End of Experiment
+        self.output_file.close();
+        print("%d samples successfully read" % (i-1))
         
-    #     # Plot Data
-    #     self.plotData(filePath)
-    #     return
+        # Plot Data
+        #self.plotData(self.filePath)
+        return
 
     # Loads data from a file and plots it on the interface
-    def plotData(self, readDataFilePath):
+    # def plotData(self, readDataFilePath):
         
-        xdata = []
-        ydata = []
-        self.plot1.clear()
-        with open(readDataFilePath, newline='') as read_file:
-            csv_reader = csv.DictReader(read_file, quoting=csv.QUOTE_NONNUMERIC, delimiter=',', quotechar='|')
-            for row in csv_reader:
-               xdata.append(row['Time'])
-               ydata.append(row['C'])
-        self.plot1.plot(xdata, ydata, marker = 'o', fillstyle = 'full')
-        self.plot1.set_xlim(-1, np.max(xdata)+1)
-        self.plot1.set_ylim(np.min(ydata)*0.9 - 1, np.max(ydata)*1.3 + 1)
-        self.canvas.draw()
-        return
+    #     xdata = []
+    #     ydata = []
+    #     self.plot1.clear()
+    #     with open(readDataFilePath, newline='') as read_file:
+    #         csv_reader = csv.DictReader(read_file, quoting=csv.QUOTE_NONNUMERIC, delimiter=',', quotechar='|')
+    #         for row in csv_reader:
+    #            xdata.append(row['Time'])
+    #            ydata.append(row['C'])
+    #     self.plot1.plot(xdata, ydata, marker = 'o', fillstyle = 'full')
+    #     self.plot1.set_xlim(-1, np.max(xdata)+1)
+    #     self.plot1.set_ylim(np.min(ydata)*0.9 - 1, np.max(ydata)*1.3 + 1)
+    #     self.canvas.draw()
+    #     return
 
 
 # Main Program Execution
 if __name__ == "__main__":
     print("Launching GenII Interface...")
     root = tk.Tk() # Create Root Tkinter Instance
+    IOSLEEPTIME = 200
     app = GenII_Interface(root) # Create Main Application Object
     root.mainloop();
