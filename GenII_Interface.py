@@ -44,6 +44,8 @@ class GenII_Interface:
         self.exit_code = bytearray([0, 1, 2, 3])
         self.CData = []
         self.GData = []
+        self.output_file = None
+        self.csv_writer = None
 
         # Initialize first frame
         self.forward()
@@ -368,26 +370,36 @@ class GenII_Interface:
     # General handler function for serial comms
     def processInputs(self):
         self.SerialObj.timeout = 0
-        line = self.SerialObj.readline().decode(encoding='ascii')
-        n_line = len(line)
-        half_n = round(n_line/2)
-        if n_line < 1:
+        try:
+            line = self.SerialObj.readline().decode(encoding='ascii')
+        except:
+            print("Invalid Read")
             self.io_task = self.root.after(IOSLEEPTIME, self.processInputs) # Schedule new read in 500 msec
             return
-        
+
+        n_line = len(line)
+        if n_line < 1:
+            print("Message too short")
+            self.io_task = self.root.after(IOSLEEPTIME, self.processInputs) # Schedule new read in 500 msec
+            return
+        #print(line)
         messageString = line[1:-1]
         match line[0]:
             case 'E': # Error Code
                 print(messageString)
             case 'D': # Data (C and G)
-                C = messageString[:half_n]
-                G = messageString[half_n:]
-                print("Capacitance: %s\nConductance: %s" % (C, G))
-                self.CData.append(C)
-                self.GData.append(G)
+                dataVec = messageString.split('!')
+                #print(dataVec)
+                if len(dataVec) > 1:
+                    C = dataVec[0]
+                    G = dataVec[1]
+                    print("Capacitance: %s\nConductance: %s" % (C, G))
+                    self.CData.append(C)
+                    self.GData.append(G)
             case 'C': # Calibration return values
                 #print(messageString)
-                self.finishCalibration(messageString[:half_n], messageString[half_n:])
+                dataVec = messageString.split('!')
+                self.finishCalibration(dataVec[0], dataVec[1])
             case 'X': # Measurement finish
                 self.finishTest()
             case 'Q':
@@ -433,13 +445,20 @@ class GenII_Interface:
     
     def finishTest(self):
         i = 0;
-        for C, G in zip(self.CData, self.GData):
-            self.csv_writer.writerow([i, C, G])
-            i+=1
+        C_Numeric = np.asarray(self.CData).astype(float)
+        G_Numeric = np.asarray(self.GData).astype(float)
+        if self.csv_writer:
+            for C, G in zip(self.CData, self.GData):
+                self.csv_writer.writerow([i, C, G])
+                i+=1
         
-        # End of Experiment
-        self.output_file.close();
-        print("%d samples successfully read" % (i-1))
+            # End of Experiment
+            self.output_file.close();
+            C_mean = np.mean(C_Numeric)
+            G_mean = np.mean(G_Numeric)
+            print("%d samples successfully read" % (i-1))
+            print("Capacitance: %0.4f +- %0.4f pF" % (C_mean, np.std(C_Numeric)))
+            print("Conductance: %0.4f +- %0.4f mS" % (G_mean, np.std(G_Numeric)))
         
         # Plot Data
         #self.plotData(self.filePath)
