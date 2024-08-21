@@ -379,7 +379,7 @@ class GenII_Interface:
 
         n_line = len(line)
         if n_line < 1:
-            print("Message too short")
+            #print("Message too short")
             self.io_task = self.root.after(IOSLEEPTIME, self.processInputs) # Schedule new read in 500 msec
             return
         #print(line)
