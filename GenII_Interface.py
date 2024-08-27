@@ -148,6 +148,11 @@ class GenII_Interface:
         btn_back.grid(row = 1, column = 2, pady = 5)
         btn_fileEdit.grid(row = 0, column = 0) # Should be just to the left of the filepath text box
 
+        # Free run checkbox
+        self.freeRunVar = tk.IntVar(value = 0)
+        ttk.Checkbutton(fr_params, text = "Free Run",variable=self.freeRunVar, onvalue=1, offvalue=0).grid(row = 2, column = 2)
+
+
         channelVars = []
         for i in range(4):
             tempVar = tk.IntVar(value = 1);
@@ -165,7 +170,8 @@ class GenII_Interface:
 
         # Components
         btn_startHeating = ttk.Button(fr_leftInfo, text = "Start Heating", style = "AccentButton", command = self.startHeating)
-        btn_beginMeasurement = ttk.Button(fr_leftInfo, text = "Begin Measurement", style = "AccentButton", command = self.beginMeasurement)
+        self.btn_text = tk.StringVar(value = "Begin Measurement")
+        btn_beginMeasurement = ttk.Button(fr_leftInfo, textvariable = self.btn_text, style = "AccentButton", command = self.startStop)
         btn_loadData = ttk.Button(fr_leftInfo, text = "Load Data", style = "AccentButton", command = self.loadAndPlotData)
         btn_back  = ttk.Button(fr_leftInfo, text = "Back", style = "AccentButton", command = self.previous)
 
@@ -230,6 +236,18 @@ class GenII_Interface:
     def loadAndPlotData(self):
         readDataFilePath = askopenfilename(defaultextension=".csv", filetypes=[("CSV Files", "*.csv")])
         self.plotData(readDataFilePath)
+        return
+
+    def startStop(self):
+
+        if self.btn_text.get() == "Begin Measurement":
+            self.btn_text.set("Stop Measurement")
+            self.beginMeasurement()
+        else:
+            self.btn_text.set("Begin Measurement")
+            self.cancelMeasurement()
+
+        return
 
     # Button Callback Functions
     def connectToDevice(self):
@@ -371,60 +389,91 @@ class GenII_Interface:
     def processInputs(self):
         self.SerialObj.timeout = 0
         try:
-            line = self.SerialObj.readline().decode(encoding='ascii')
-        except:
-            print("Invalid Read")
+            # Read a single character from buffer
+            controlChar = self.SerialObj.read(1);
+            #print(controlChar)
+            #line = self.SerialObj.readline().decode(encoding='ascii')
+        except Exception as e:
+            print(e)
             self.io_task = self.root.after(IOSLEEPTIME, self.processInputs) # Schedule new read in 500 msec
             return
-
-        n_line = len(line)
-        if n_line < 1:
-            #print("Message too short")
-            self.io_task = self.root.after(IOSLEEPTIME, self.processInputs) # Schedule new read in 500 msec
-            return
-        #print(line)
-        messageString = line[1:-1]
-        match line[0]:
-            case 'E': # Error Code
-                print(messageString)
-            case 'D': # Data (C and G)
-                dataVec = messageString.split('!')
-                #print(dataVec)
-                if len(dataVec) > 1:
+        match controlChar:
+            case b'E': # Error Code
+                line = self.SerialObj.readline()
+                try:
+                    decoded_line = line.decode(encoding='utf-8')
+                except Exception as e:
+                    print(e);
+                    self.io_task = self.root.after(IOSLEEPTIME, self.processInputs) # Schedule new read in 500 msec
+                    return
+                print(line[0:-1])
+            case b'D': # Data (C and G)
+                line = self.SerialObj.readline()
+                decoded_line = line.decode(encoding='utf-8')
+                #print(decoded_line);
+                dataVec = decoded_line[0:-1].split('!')
+                if len(dataVec) < 2:
+                    print(dataVec)
+                else:
                     C = dataVec[0]
                     G = dataVec[1]
                     print("Capacitance: %s\nConductance: %s" % (C, G))
                     self.CData.append(C)
                     self.GData.append(G)
-            case 'C': # Calibration return values
-                #print(messageString)
-                dataVec = messageString.split('!')
+            case b'C': # Calibration return values
+                line = self.SerialObj.readline().decode(encoding='ascii', errors = 'ignore')
+                dataVec = line[0:-1].split('!')
                 self.finishCalibration(dataVec[0], dataVec[1])
-            case 'X': # Measurement finish
+            case b'X': # Measurement finish
                 self.finishTest()
-            case 'Q':
-                self.finishEQC(messageString)
-            case 'T': # Temperature Reading
-                print("Temperature: %s" % messageString)
-                self.str_currentTemp.set(messageString)
+            case b'Q':
+                line = self.SerialObj.readline().decode(encoding='ascii')
+                self.finishEQC(line[0:-1])
+            case b'T': # Temperature Reading
+                line = self.SerialObj.readline().decode(encoding='ascii')
+                print("Temperature: %s" % line[0:-1])
+                self.str_currentTemp.set(line[0:-1])
+            case b'F': # Free Data. F character tells UI to expect 512 data points 
+                try:
+                    self.SerialObj.timeout = 2
+                    line = self.SerialObj.readline()
+                    decoded_line = line.decode(encoding='utf-8')
+                    dataVec = decoded_line[0:-1].split('!')
+                    if not self.output_file.closed:
+                        self.processFreeData(dataVec)
+                except Exception as e:
+                    print(e)
+                    self.io_task = self.root.after(IOSLEEPTIME, self.processInputs) # Schedule new read in 500 msec
             case _: # No match 
-                print("Invalid Read")
+                pass
 
         self.io_task = self.root.after(IOSLEEPTIME, self.processInputs) # Schedule new read in 500 msec
 
     # Command board to begin taking measurements and sending data    
     def beginMeasurement(self):
-
         self.filePath = self.str_filePath.get()
-
+        freeRun = self.freeRunVar.get()
+        
         # Clear output file and write header
         with open(self.filePath, 'w', newline = '') as output_file:
             csv_writer = csv.writer(output_file, delimiter = ',', quoting = csv.QUOTE_NONNUMERIC, quotechar='|')
-            csv_writer.writerow(['Time', 'C', 'G'])
+            if freeRun:
+                csv_writer.writerow(['Ve', 'Vr'])
+            else:
+                csv_writer.writerow(['Time', 'C', 'G'])
         
         # Reopen file in append mode to continuously write data
         self.output_file = open(self.filePath, 'a', newline = '')
         self.csv_writer = csv.writer(self.output_file, delimiter = ',', quoting=csv.QUOTE_NONNUMERIC)
+
+        if freeRun:
+            try: 
+                self.SerialObj.timeout = 1
+                self.SerialObj.write(b'F') # Free run
+                print("Starting Free Run")
+            except: 
+                self.eqcStatus.set("Failed to Start test to COM Port")
+            return
 
         # Reinitialize data vectors
         self.CData = []
@@ -460,8 +509,20 @@ class GenII_Interface:
             print("Capacitance: %0.4f +- %0.4f pF" % (C_mean, np.std(C_Numeric)))
             print("Conductance: %0.4f +- %0.4f mS" % (G_mean, np.std(G_Numeric)))
         
+        self.btn_text.set("Begin Measurement")
         # Plot Data
         #self.plotData(self.filePath)
+        return
+
+    def processFreeData(self, dataVec):
+        
+        print("Writing %d datapoints" % len(dataVec))
+        
+        for i in range(0, 64, 2):
+            self.csv_writer.writerow([dataVec[i], dataVec[i+1]])
+        
+        #print("All Clear Sent")
+        self.SerialObj.write(b'K') # Send all clear to receive more data
         return
 
     # Loads data from a file and plots it on the interface
@@ -480,6 +541,16 @@ class GenII_Interface:
     #     self.plot1.set_ylim(np.min(ydata)*0.9 - 1, np.max(ydata)*1.3 + 1)
     #     self.canvas.draw()
     #     return
+
+    def cancelMeasurement(self):
+        try: 
+            self.SerialObj.timeout = 1
+            self.SerialObj.write(b'X') # Cancel Ongoing Test
+            self.output_file.close()
+            print("Collection Finished.")
+        except: 
+            self.eqcStatus.set("Failed to Start test to COM Port")
+        return
 
 
 # Main Program Execution
