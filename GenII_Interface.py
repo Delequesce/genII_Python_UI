@@ -294,7 +294,7 @@ class GenII_Interface:
         # Wakeup and Check Connection Status Command. Function is blocking until timeout
         try: 
             SerialObj.reset_input_buffer()
-            SerialObj.write(b'C') 
+            SerialObj.write(b'C\n') 
         except: # Timeout exception
              self.deviceStatus.set("Failed to Write to COM Port")
              return
@@ -333,7 +333,7 @@ class GenII_Interface:
 
     def performCalibration(self):
         try: 
-            self.SerialObj.write(b'B')
+            self.SerialObj.write(b'B\n')
         except: 
             self.calibStatus.set("Failed to Write to COM Port")
             return
@@ -354,7 +354,7 @@ class GenII_Interface:
 
     def performEQC(self):
         try: 
-            self.SerialObj.write(b'Q')
+            self.SerialObj.write(b'Q\n')
         except: 
             self.eqcStatus.set("Failed to Write to COM Port")
             return
@@ -378,7 +378,7 @@ class GenII_Interface:
     
     def startHeating(self):
         try: 
-            self.SerialObj.write(b'H')
+            self.SerialObj.write(b'H\n')
         except: 
             self.eqcStatus.set("Failed to Write to COM Port")
             return
@@ -451,6 +451,7 @@ class GenII_Interface:
 
     # Command board to begin taking measurements and sending data    
     def beginMeasurement(self):
+        invalid = 0
         self.filePath = self.str_filePath.get()
         freeRun = self.freeRunVar.get()
         
@@ -469,7 +470,7 @@ class GenII_Interface:
         if freeRun:
             try: 
                 self.SerialObj.timeout = 1
-                self.SerialObj.write(b'F') # Free run
+                self.SerialObj.write(b'F\n') # Free run
                 print("Starting Free Run")
             except: 
                 self.eqcStatus.set("Failed to Start test to COM Port")
@@ -481,9 +482,55 @@ class GenII_Interface:
 
         # Send command to device to start measurement. Cancel reads during this process
         #tk.after_cancel(self.io_task)
+        runT = self.str_runT.get()
+        intrunT = int(runT)
+        N_bytes_1 = len(runT)
+        collectionInterval = '1'
+        N_bytes_2 = len(collectionInterval)
+        incTemp = self.str_incTemp.get()
+        N_bytes_3 = len(incTemp)
+
+        valTime = [1, 9999]
+        valCol = [1, np.min([intrunT, 9])]
+        valTemp = [25, 50]
+
+
+        if intrunT > valTime[1] or intrunT < valTime[0]:
+            print("Invalid Run Time. Valid Range is 1 - 9999 sec")
+            invalid = 1
+        
+        if int(collectionInterval) > valCol[1] or int(collectionInterval) < valCol[0]:
+            print("Invalid Collection Interval, must be less than Run Time and between 0 and 9")
+            invalid = 1
+
+        if int(incTemp) > valTemp[1] or int(incTemp) < valTemp[0]:
+            print("Invalid Incubation Temperature. Valid range is 25 - 50 C")
+            invalid = 1
+
+        if invalid:
+            # Adjust Button State and abort Test
+            # To Do...
+            return
+
+        # Adjust run time byte length for transmission
+        for i in range(4-N_bytes_1):
+            runT = "0" + runT
+        
+        sendData = bytearray('S' + runT + collectionInterval +  incTemp + '\n', 'ascii')
+
         try: 
-            self.SerialObj.timeout = 1
-            self.SerialObj.write(b'N')
+            self.SerialObj.timeout = 2
+            # Write test parameters
+            self.SerialObj.write(sendData)
+            #self.SerialObj.write(collectionInterval)
+            #self.SerialObj.write(incTemp)
+
+            controlChar = self.SerialObj.read(1);
+            if controlChar != b'K':
+                print("Failed to write new test parameters")
+                return
+            # Command new test
+            self.SerialObj.write(b'N\n')
         except: 
             self.eqcStatus.set("Failed to Start test to COM Port")
             return
@@ -522,7 +569,7 @@ class GenII_Interface:
             self.csv_writer.writerow([dataVec[i], dataVec[i+1]])
         
         #print("All Clear Sent")
-        self.SerialObj.write(b'K') # Send all clear to receive more data
+        self.SerialObj.write(b'K\n') # Send all clear to receive more data
         return
 
     # Loads data from a file and plots it on the interface
@@ -545,7 +592,7 @@ class GenII_Interface:
     def cancelMeasurement(self):
         try: 
             self.SerialObj.timeout = 1
-            self.SerialObj.write(b'X') # Cancel Ongoing Test
+            self.SerialObj.write(b'X\n') # Cancel Ongoing Test
             self.output_file.close()
             print("Collection Finished.")
         except: 
