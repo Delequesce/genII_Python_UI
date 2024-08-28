@@ -42,11 +42,12 @@ class GenII_Interface:
 
         # Other
         self.exit_code = bytearray([0, 1, 2, 3])
+        self.countData = []
         self.CData = []
         self.GData = []
         self.output_file = None
         self.csv_writer = None
-
+        
         # Initialize first frame
         self.forward()
         
@@ -415,11 +416,12 @@ class GenII_Interface:
                 if len(dataVec) < 2:
                     print(dataVec)
                 else:
+                    self.countData.append(len(self.countData) + 1)
                     C = dataVec[0]
                     G = dataVec[1]
                     print("Capacitance: %s\nConductance: %s" % (C, G))
-                    self.CData.append(C)
-                    self.GData.append(G)
+                    self.printAndStore(C, G)
+
             case b'C': # Calibration return values
                 line = self.SerialObj.readline().decode(encoding='ascii', errors = 'ignore')
                 dataVec = line[0:-1].split('!')
@@ -510,6 +512,7 @@ class GenII_Interface:
         if invalid:
             # Adjust Button State and abort Test
             # To Do...
+            self.btn_text.set("Begin Measurement")
             return
 
         # Adjust run time byte length for transmission
@@ -522,8 +525,6 @@ class GenII_Interface:
             self.SerialObj.timeout = 2
             # Write test parameters
             self.SerialObj.write(sendData)
-            #self.SerialObj.write(collectionInterval)
-            #self.SerialObj.write(incTemp)
 
             controlChar = self.SerialObj.read(1);
             if controlChar != b'K':
@@ -534,27 +535,59 @@ class GenII_Interface:
         except: 
             self.eqcStatus.set("Failed to Start test to COM Port")
             return
-        
+
+        self.countData = []
+        # Initialize plot
+        self.plot1.cla()
+        for i in range(1):
+            self.plot1.plot([], [], 'o-', label = f"Channel {i+1}", markersize=4)
+
+        self.lines = self.plot1.get_lines()
+        self.plot1.set_xlabel("Time (s)")
+        self.plot1.set_ylabel("Capacitance (pF)")
+        self.plot1.legend(loc='upper left')
+
         # After function exits, input processing thread will continue to run and handle incoming data
         #self.io_task = tk.after(100, self.processInputs) # Schedule new read in 500 msec
         return
     
+
+    def printAndStore(self, C, G):
+
+        try:
+            self.CData.append(float(C[:-1]))
+            self.GData.append(float(G[:-1]))
+        except Exception as e:
+            print(e)
+            return
+
+        i = self.countData[-1]
+        if self.csv_writer:
+            self.csv_writer.writerow([i, C, G])
+
+        q = 0
+        for l in self.lines:
+            l.set_xdata(self.countData)
+            l.set_ydata(self.CData)
+            q+=1
+
+        self.plot1.set_xlim(-1, np.max(self.CData)+1)
+        self.plot1.set_ylim(np.min(self.CData)*0.9 - 1, np.max(self.CData)*1.3 + 1)
+        self.canvas.draw()
+
+
     def finishTest(self):
-        i = 0;
         C_Numeric = np.asarray(self.CData).astype(float)
         G_Numeric = np.asarray(self.GData).astype(float)
-        if self.csv_writer:
-            for C, G in zip(self.CData, self.GData):
-                self.csv_writer.writerow([i, C, G])
-                i+=1
         
-            # End of Experiment
+        # End of Experiment
+        if self.output_file:
             self.output_file.close();
-            C_mean = np.mean(C_Numeric)
-            G_mean = np.mean(G_Numeric)
-            print("%d samples successfully read" % (i-1))
-            print("Capacitance: %0.4f +- %0.4f pF" % (C_mean, np.std(C_Numeric)))
-            print("Conductance: %0.4f +- %0.4f mS" % (G_mean, np.std(G_Numeric)))
+        C_mean = np.mean(C_Numeric)
+        G_mean = np.mean(G_Numeric)
+        print("%d samples successfully read" % (len(self.countData)))
+        print("Capacitance: %0.4f +- %0.4f pF" % (C_mean, np.std(C_Numeric)))
+        print("Conductance: %0.4f +- %0.4f mS" % (G_mean, np.std(G_Numeric)))
         
         self.btn_text.set("Begin Measurement")
         # Plot Data
