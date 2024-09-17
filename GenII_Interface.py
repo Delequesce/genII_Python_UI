@@ -407,7 +407,7 @@ class GenII_Interface:
                     print(e);
                     self.io_task = self.root.after(IOSLEEPTIME, self.processInputs) # Schedule new read in 500 msec
                     return
-                print(line[0:-1])
+                print(decoded_line[0:-1])
             case b'D': # Data (C and G)
                 line = self.SerialObj.readline()
                 decoded_line = line.decode(encoding='utf-8')
@@ -546,6 +546,7 @@ class GenII_Interface:
         self.plot1.set_xlabel("Time (s)")
         self.plot1.set_ylabel("Capacitance (pF)")
         self.plot1.legend(loc='upper left')
+        self.plot1.set_xlim(-1, 30)
 
         # After function exits, input processing thread will continue to run and handle incoming data
         #self.io_task = tk.after(100, self.processInputs) # Schedule new read in 500 msec
@@ -571,7 +572,7 @@ class GenII_Interface:
             l.set_ydata(self.CData)
             q+=1
 
-        self.plot1.set_xlim(-1, np.max(self.CData)+1)
+        self.plot1.set_xlim(-1, np.floor((i-1)/30 + 1) * 30)
         self.plot1.set_ylim(np.min(self.CData)*0.9 - 1, np.max(self.CData)*1.3 + 1)
         self.canvas.draw()
 
