@@ -43,8 +43,8 @@ class GenII_Interface:
         # Other
         self.exit_code = bytearray([0, 1, 2, 3])
         self.countData = []
-        self.CData = []
-        self.GData = []
+        self.channelList = []
+        self.DataMat = []
         self.output_file = None
         self.csv_writer = None
         
@@ -154,10 +154,10 @@ class GenII_Interface:
         ttk.Checkbutton(fr_params, text = "Free Run",variable=self.freeRunVar, onvalue=1, offvalue=0).grid(row = 2, column = 2)
 
 
-        channelVars = []
+        self.channelVars = []
         for i in range(4):
             tempVar = tk.IntVar(value = 1);
-            channelVars.append(tempVar);
+            self.channelVars.append(tempVar);
             ttk.Checkbutton(fr_channels, text=f"Ch{i+1}",variable=tempVar, 
                 onvalue=1, offvalue=0).grid(row = int(i/2), column = i % 2, padx = 5, pady = 1)
 
@@ -170,7 +170,8 @@ class GenII_Interface:
         fr_paramEst = ttk.Labelframe(fr_testWindow, text = "Current Parameter Estimates", labelanchor='n')
 
         # Components
-        btn_startHeating = ttk.Button(fr_leftInfo, text = "Start Heating", style = "AccentButton", command = self.startHeating)
+        self.heatBtn_text = tk.StringVar(value = "Start Heating")
+        btn_startHeating = ttk.Button(fr_leftInfo, textvariable = self.heatBtn_text, style = "AccentButton", command = self.startHeating)
         self.btn_text = tk.StringVar(value = "Begin Measurement")
         btn_beginMeasurement = ttk.Button(fr_leftInfo, textvariable = self.btn_text, style = "AccentButton", command = self.startStop)
         btn_loadData = ttk.Button(fr_leftInfo, text = "Load Data", style = "AccentButton", command = self.loadAndPlotData)
@@ -341,13 +342,18 @@ class GenII_Interface:
         
         self.calibStatus.set("Waiting for Calibration to complete")
 
-    def finishCalibration(self, Zfb_real, Zfb_imag):
+    def finishCalibration(self, dataVec):
 
         #if Zfb_real == 0:
         #   self.eqcStatus.set("Calibration Failed")
         #    return
-
-        print("New Calibration Value: %s + %s j" % (Zfb_real, Zfb_imag))
+        printString = """New Calibration Values:
+              Channel 1: %s + %s j
+              Channel 2: %s + %s j
+              Channel 3: %s + %s j
+              Channel 4: %s + %s j"""
+        
+        print(printString % (dataVec[0], dataVec[1], dataVec[2], dataVec[3], dataVec[4], dataVec[5], dataVec[6], dataVec[7]))
     
         self.eqcStatus.set("Calibration Successful")
         return
@@ -378,11 +384,16 @@ class GenII_Interface:
         return
     
     def startHeating(self):
-        try: 
-            self.SerialObj.write(b'H\n')
-        except: 
-            self.eqcStatus.set("Failed to Write to COM Port")
-            return
+
+        if self.heatBtn_text.get() == "Start Heating":
+            self.heatBtn_text.set("Stop Heating")
+            try: 
+                self.SerialObj.write(b'H\n')
+            except: 
+                self.eqcStatus.set("Failed to Write to COM Port")
+                return
+        else:
+            self.btn_text.set("Start Heating")
         
         return
 
@@ -417,15 +428,12 @@ class GenII_Interface:
                     print(dataVec)
                 else:
                     self.countData.append(len(self.countData) + 1)
-                    C = dataVec[0]
-                    G = dataVec[1]
-                    print("Capacitance: %s\nConductance: %s" % (C, G))
-                    self.printAndStore(C, G)
+                    self.printAndStore(dataVec)
 
             case b'C': # Calibration return values
                 line = self.SerialObj.readline().decode(encoding='ascii', errors = 'ignore')
                 dataVec = line[0:-1].split('!')
-                self.finishCalibration(dataVec[0], dataVec[1])
+                self.finishCalibration(dataVec)
             case b'X': # Measurement finish
                 self.finishTest()
             case b'Q':
@@ -433,8 +441,8 @@ class GenII_Interface:
                 self.finishEQC(line[0:-1])
             case b'T': # Temperature Reading
                 line = self.SerialObj.readline().decode(encoding='ascii')
-                print("Temperature: %s" % line[0:-1])
-                self.str_currentTemp.set(line[0:-1])
+                #print("Temperature: %s" % line[0:-1])
+                self.str_currentTemp.set(line[0:-4]) #Increase number to reduce how many decimals are printed
             case b'F': # Free Data. F character tells UI to expect 512 data points 
                 try:
                     self.SerialObj.timeout = 2
@@ -463,7 +471,7 @@ class GenII_Interface:
             if freeRun:
                 csv_writer.writerow(['Ve', 'Vr'])
             else:
-                csv_writer.writerow(['Time', 'C', 'G'])
+                csv_writer.writerow(['Time', 'C1', 'C2', 'C3','C4','G1','G2','G3', 'G4'])
         
         # Reopen file in append mode to continuously write data
         self.output_file = open(self.filePath, 'a', newline = '')
@@ -477,10 +485,6 @@ class GenII_Interface:
             except: 
                 self.eqcStatus.set("Failed to Start test to COM Port")
             return
-
-        # Reinitialize data vectors
-        self.CData = []
-        self.GData = []
 
         # Send command to device to start measurement. Cancel reads during this process
         #tk.after_cancel(self.io_task)
@@ -535,11 +539,15 @@ class GenII_Interface:
         except: 
             self.eqcStatus.set("Failed to Start test to COM Port")
             return
+        
+        # Reinitialize data vectors
+        self.DataMat = np.empty((intrunT, 8))
+        self.DataMat[:] = np.nan
 
         self.countData = []
         # Initialize plot
         self.plot1.cla()
-        for i in range(1):
+        for i in range(4):
             self.plot1.plot([], [], 'o-', label = f"Channel {i+1}", markersize=4)
 
         self.lines = self.plot1.get_lines()
@@ -548,47 +556,70 @@ class GenII_Interface:
         self.plot1.legend(loc='upper left')
         self.plot1.set_xlim(-1, 30)
 
+        i = 0
+        for var in self.channelVars:
+            if var.get() == 1:
+                self.channelList.append(i)
+            i+=1
+
         # After function exits, input processing thread will continue to run and handle incoming data
         #self.io_task = tk.after(100, self.processInputs) # Schedule new read in 500 msec
         return
     
 
-    def printAndStore(self, C, G):
+    def printAndStore(self, dataVec):
+
+        # Get current count
+        i = self.countData[-1]
+
+        # Process Data Vector
+        CVec = []
+        GVec = []
 
         try:
-            self.CData.append(float(C[:-1]))
-            self.GData.append(float(G[:-1]))
+            for C, G in zip(dataVec[0::2], dataVec[1::2]):
+                CVec.append(float(C[:-1]))
+                GVec.append(float(G[:-1]))
+
         except Exception as e:
             print(e)
             return
 
-        i = self.countData[-1]
-        if self.csv_writer:
-            self.csv_writer.writerow([i, C, G])
-
-        q = 0
-        for l in self.lines:
+        for chan in self.channelList:
+            self.DataMat[i-1, chan] = CVec[chan]
+            self.DataMat[i-1, chan+4] = GVec[chan]
+            l = self.lines[chan]
             l.set_xdata(self.countData)
-            l.set_ydata(self.CData)
-            q+=1
+            l.set_ydata(self.DataMat[0:i, chan])
+
+        #smallMat = self.DataMat[~np.isnan(self.DataMat)]
+        smallMat = self.DataMat[i-1]
 
         self.plot1.set_xlim(-1, np.floor((i-1)/30 + 1) * 30)
-        self.plot1.set_ylim(np.min(self.CData)*0.9 - 1, np.max(self.CData)*1.3 + 1)
+        self.plot1.set_ylim(np.min(smallMat[self.channelList])*0.9 - 1, np.max(smallMat[self.channelList])*1.3 + 1)
         self.canvas.draw()
+
+        if self.csv_writer:
+            self.csv_writer.writerow(np.concatenate(([i], smallMat)))
+            #print(printString + '\n')
 
 
     def finishTest(self):
-        C_Numeric = np.asarray(self.CData).astype(float)
-        G_Numeric = np.asarray(self.GData).astype(float)
         
         # End of Experiment
         if self.output_file:
             self.output_file.close();
-        C_mean = np.mean(C_Numeric)
-        G_mean = np.mean(G_Numeric)
+        
+        self.DataMat = self.DataMat[0:self.countData[-1]]
+
+        DataMean = np.mean(self.DataMat, 0)
+        DataStd = np.std(self.DataMat, 0)
+
         print("%d samples successfully read" % (len(self.countData)))
-        print("Capacitance: %0.4f +- %0.4f pF" % (C_mean, np.std(C_Numeric)))
-        print("Conductance: %0.4f +- %0.4f mS" % (G_mean, np.std(G_Numeric)))
+        for chan in self.channelList:
+            print(f"Channel {chan}: ")
+            print("Capacitance: %0.4f +- %0.4f pF" % (DataMean[chan], DataStd[chan]))
+            print("Conductance: %0.4f +- %0.4f mS" % (DataMean[chan+4], DataStd[chan+4]))
         
         self.btn_text.set("Begin Measurement")
         # Plot Data
