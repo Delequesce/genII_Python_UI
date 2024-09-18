@@ -393,8 +393,12 @@ class GenII_Interface:
                 self.eqcStatus.set("Failed to Write to COM Port")
                 return
         else:
-            self.btn_text.set("Start Heating")
-        
+            self.heatBtn_text.set("Start Heating")
+            try: 
+                self.SerialObj.write(b'H\n')
+            except: 
+                self.eqcStatus.set("Failed to Write to COM Port")
+                return
         return
 
     # General handler function for serial comms
@@ -421,10 +425,15 @@ class GenII_Interface:
                 print(decoded_line[0:-1])
             case b'D': # Data (C and G)
                 line = self.SerialObj.readline()
-                decoded_line = line.decode(encoding='utf-8')
+                try:
+                    decoded_line = line.decode(encoding='utf-8')
+                except Exception as e:
+                    print(e)
+                    self.io_task = self.root.after(IOSLEEPTIME, self.processInputs)
+                    return
                 #print(decoded_line);
                 dataVec = decoded_line[0:-1].split('!')
-                if len(dataVec) < 2:
+                if len(dataVec) < 8:
                     print(dataVec)
                 else:
                     self.countData.append(len(self.countData) + 1)
