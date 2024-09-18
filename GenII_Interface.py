@@ -258,6 +258,8 @@ class GenII_Interface:
         list = serial.tools.list_ports.comports()
         connected = []
         print("Connected COM ports:") 
+        if len(list) == 1:
+            genII_port = list[0].device
         for element in list:
             connected.append(element.device)
             print(str(element.device) + ": " + element.description)
@@ -403,7 +405,7 @@ class GenII_Interface:
 
     # General handler function for serial comms
     def processInputs(self):
-        self.SerialObj.timeout = 0
+        self.SerialObj.timeout = 1
         try:
             # Read a single character from buffer
             controlChar = self.SerialObj.read(1);
@@ -417,7 +419,7 @@ class GenII_Interface:
             case b'E': # Error Code
                 line = self.SerialObj.readline()
                 try:
-                    decoded_line = line.decode(encoding='utf-8')
+                    decoded_line = line.decode(encoding='ascii')
                 except Exception as e:
                     print(e);
                     self.io_task = self.root.after(IOSLEEPTIME, self.processInputs) # Schedule new read in 500 msec
@@ -426,15 +428,17 @@ class GenII_Interface:
             case b'D': # Data (C and G)
                 line = self.SerialObj.readline()
                 try:
-                    decoded_line = line.decode(encoding='utf-8')
+                    decoded_line = line.decode(encoding='ascii')
                 except Exception as e:
                     print(e)
+                    print(line)
                     self.io_task = self.root.after(IOSLEEPTIME, self.processInputs)
                     return
                 #print(decoded_line);
                 dataVec = decoded_line[0:-1].split('!')
                 if len(dataVec) < 8:
-                    print(dataVec)
+                    print(decoded_line)
+                    #print(dataVec)
                 else:
                     self.countData.append(len(self.countData) + 1)
                     self.printAndStore(dataVec)
@@ -449,7 +453,13 @@ class GenII_Interface:
                 line = self.SerialObj.readline().decode(encoding='ascii')
                 self.finishEQC(line[0:-1])
             case b'T': # Temperature Reading
-                line = self.SerialObj.readline().decode(encoding='ascii')
+                try:
+                    line = self.SerialObj.readline().decode(encoding='ascii')
+                except Exception as e:
+                    print(e)
+                    print(line)
+                    self.io_task = self.root.after(IOSLEEPTIME, self.processInputs)
+                    return
                 #print("Temperature: %s" % line[0:-1])
                 self.str_currentTemp.set(line[0:-4]) #Increase number to reduce how many decimals are printed
             case b'F': # Free Data. F character tells UI to expect 512 data points 
@@ -463,7 +473,8 @@ class GenII_Interface:
                 except Exception as e:
                     print(e)
                     self.io_task = self.root.after(IOSLEEPTIME, self.processInputs) # Schedule new read in 500 msec
-            case _: # No match 
+            case _: # No match
+                #print(controlChar)
                 pass
 
         self.io_task = self.root.after(IOSLEEPTIME, self.processInputs) # Schedule new read in 500 msec
@@ -678,6 +689,6 @@ class GenII_Interface:
 if __name__ == "__main__":
     print("Launching GenII Interface...")
     root = tk.Tk() # Create Root Tkinter Instance
-    IOSLEEPTIME = 200
+    IOSLEEPTIME = 500
     app = GenII_Interface(root) # Create Main Application Object
     root.mainloop();
