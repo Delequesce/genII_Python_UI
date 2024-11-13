@@ -253,6 +253,11 @@ class GenII_Interface:
 
     # Button Callback Functions
     def connectToDevice(self):
+
+        with open('C://Users/cdeli/Desktop/TemperatureLog.csv', 'w', newline = '') as output_file:
+            csv_writer = csv.writer(output_file, delimiter = ',', quoting = csv.QUOTE_NONNUMERIC, quotechar='|')
+            csv_writer.writerow(["Temperature"])
+
         ret = 0;
 
         list = serial.tools.list_ports.comports()
@@ -455,6 +460,7 @@ class GenII_Interface:
             case b'T': # Temperature Reading
                 try:
                     line = self.SerialObj.readline().decode(encoding='ascii')
+                    self.storeTemps(line)
                 except Exception as e:
                     print(e)
                     print(line)
@@ -586,6 +592,11 @@ class GenII_Interface:
         #self.io_task = tk.after(100, self.processInputs) # Schedule new read in 500 msec
         return
     
+
+    def storeTemps(self, line):
+        with open('C://Users/cdeli/Desktop/TemperatureLog.csv', 'a', newline = '') as output_file:
+            csv_writer = csv.writer(output_file, delimiter = ',', quoting = csv.QUOTE_NONNUMERIC, quotechar='|')
+            csv_writer.writerow([float(line)])
 
     def printAndStore(self, dataVec):
 
