@@ -40,6 +40,10 @@ class GenII_Interface:
         self.frameList.append(self.createParamWindow(root))
         self.frameList.append(self.creatTestRunWindow(root))
 
+        # Flags
+        self.isHeating = 0
+        self.isMeasuring = 0
+
         # Other
         self.exit_code = bytearray([0, 1, 2, 3])
         self.countData = []
@@ -55,10 +59,12 @@ class GenII_Interface:
     def createTopWindow(self, root):
         root.minsize(root.winfo_width(), root.winfo_height())
         # Get Height of Screen
-        width = int(root.winfo_screenwidth()/4)
-        height = int(root.winfo_screenheight()*0.75)
-        x_coordinate = 2000
-        y_coordinate = 300
+        #width = int(root.winfo_screenwidth()/4)
+        #height = int(root.winfo_screenheight()*0.75)
+        width = 480
+        height = 272
+        #x_coordinate = 2000
+        #y_coordinate = 300
         #root.geometry("{}x{}+{}+{}".format(width, height, x_coordinate, y_coordinate))
         root.title("MIA Generation II Interface")
         style = ttk.Style(root)
@@ -241,8 +247,8 @@ class GenII_Interface:
         return
 
     def startStop(self):
-
-        if self.btn_text.get() == "Begin Measurement":
+        self.isMeasuring^=1;
+        if self.isMeasuring:
             self.btn_text.set("Stop Measurement")
             self.beginMeasurement()
         else:
@@ -254,9 +260,9 @@ class GenII_Interface:
     # Button Callback Functions
     def connectToDevice(self):
 
-        with open('C://Users/cdeli/Desktop/TemperatureLog.csv', 'w', newline = '') as output_file:
-            csv_writer = csv.writer(output_file, delimiter = ',', quoting = csv.QUOTE_NONNUMERIC, quotechar='|')
-            csv_writer.writerow(["Temperature"])
+#         with open('C://Users/cdeli/Desktop/TemperatureLog.csv', 'w', newline = '') as output_file:
+#             csv_writer = csv.writer(output_file, delimiter = ',', quoting = csv.QUOTE_NONNUMERIC, quotechar='|')
+#             csv_writer.writerow(["Temperature"])
 
         ret = 0;
 
@@ -291,24 +297,22 @@ class GenII_Interface:
             print("Attempting connection to %s" % str(genII_port))
             #SerialObj = serial.Serial('/dev/ttyS3') # Port is immediately opened upon creation. 
             SerialObj.open()
+            print("Port Succesfully Opened")
         except Exception as e:
             self.deviceStatus.set("Failed to Access COM Port")
             print(e)
             return
-
-        print("Port Succesfully Opened")
 
         SerialObj.reset_output_buffer()
 
         # Wakeup and Check Connection Status Command. Function is blocking until timeout
         try: 
             SerialObj.reset_input_buffer()
-            SerialObj.write(b'C\n') 
+            SerialObj.write(b'C\n')
+            print("Connection Command Written to Port")
         except: # Timeout exception
              self.deviceStatus.set("Failed to Write to COM Port")
-             return
-        
-        print("Connection Command Written to Port")
+             return        
 
         # Wait for MCU to Process and write return data
 
@@ -391,8 +395,9 @@ class GenII_Interface:
         return
     
     def startHeating(self):
+        self.isHeating^=1
 
-        if self.heatBtn_text.get() == "Start Heating":
+        if self.isHeating:
             self.heatBtn_text.set("Stop Heating")
             try: 
                 self.SerialObj.write(b'H\n')
@@ -414,74 +419,78 @@ class GenII_Interface:
         try:
             # Read a single character from buffer
             controlChar = self.SerialObj.read(1);
-            #print(controlChar)
+           #print(controlChar)
             #line = self.SerialObj.readline().decode(encoding='ascii')
         except Exception as e:
             print(e)
-            self.io_task = self.root.after(IOSLEEPTIME, self.processInputs) # Schedule new read in 500 msec
+            self.io_task = self.root.after(ERR_IOSLEEPTIME, self.processInputs) # Schedule new read in 500 msec
             return
-        match controlChar:
-            case b'E': # Error Code
-                line = self.SerialObj.readline()
-                try:
-                    decoded_line = line.decode(encoding='ascii')
-                except Exception as e:
-                    print(e);
-                    self.io_task = self.root.after(IOSLEEPTIME, self.processInputs) # Schedule new read in 500 msec
-                    return
-                print(decoded_line[0:-1])
-            case b'D': # Data (C and G)
-                line = self.SerialObj.readline()
-                try:
-                    decoded_line = line.decode(encoding='ascii')
-                except Exception as e:
-                    print(e)
-                    print(line)
-                    self.io_task = self.root.after(IOSLEEPTIME, self.processInputs)
-                    return
-                #print(decoded_line);
-                dataVec = decoded_line[0:-1].split('!')
-                if len(dataVec) < 8:
-                    print(decoded_line)
-                    #print(dataVec)
-                else:
-                    self.countData.append(len(self.countData) + 1)
-                    self.printAndStore(dataVec)
 
-            case b'C': # Calibration return values
-                line = self.SerialObj.readline().decode(encoding='ascii', errors = 'ignore')
-                dataVec = line[0:-1].split('!')
-                self.finishCalibration(dataVec)
-            case b'X': # Measurement finish
-                self.finishTest()
-            case b'Q':
+        if controlChar == b'' or controlChar[0] < 65:
+            self.io_task = self.root.after(ERR_IOSLEEPTIME, self.processInputs)
+            return
+
+        if controlChar == b'E': # Error Code
+            line = self.SerialObj.readline()
+            try:
+                decoded_line = line.decode(encoding='ascii')
+            except Exception as e:
+                print(e);
+                self.io_task = self.root.after(ERR_IOSLEEPTIME, self.processInputs) # Schedule new read in 500 msec
+                return
+            print(decoded_line[0:-1])
+        elif controlChar == b'D': # Data (C and G)
+            line = self.SerialObj.readline()
+            try:
+                decoded_line = line.decode(encoding='ascii')
+            except Exception as e:
+                print(e)
+                print(line)
+                self.io_task = self.root.after(ERR_IOSLEEPTIME, self.processInputs)
+                return
+            #print(decoded_line);
+            dataVec = decoded_line[0:-1].split('!')
+            if len(dataVec) < 8:
+                print(decoded_line)
+                #print(dataVec)
+            else:
+                self.countData.append(len(self.countData) + 1)
+                self.printAndStore(dataVec)
+
+        elif controlChar == b'C': # Calibration return values
+            line = self.SerialObj.readline().decode(encoding='ascii', errors = 'ignore')
+            dataVec = line[0:-1].split('!')
+            self.finishCalibration(dataVec)
+        elif controlChar == b'X': # Measurement finish
+            self.finishTest()
+        elif controlChar == b'Q':
+            line = self.SerialObj.readline().decode(encoding='ascii')
+            self.finishEQC(line[0:-1])
+        elif controlChar == b'T': # Temperature Reading
+            try:
                 line = self.SerialObj.readline().decode(encoding='ascii')
-                self.finishEQC(line[0:-1])
-            case b'T': # Temperature Reading
-                try:
-                    line = self.SerialObj.readline().decode(encoding='ascii')
-                    self.storeTemps(line)
-                except Exception as e:
-                    print(e)
-                    print(line)
-                    self.io_task = self.root.after(IOSLEEPTIME, self.processInputs)
-                    return
-                #print("Temperature: %s" % line[0:-1])
-                self.str_currentTemp.set(line[0:-4]) #Increase number to reduce how many decimals are printed
-            case b'F': # Free Data. F character tells UI to expect 512 data points 
-                try:
-                    self.SerialObj.timeout = 2
-                    line = self.SerialObj.readline()
-                    decoded_line = line.decode(encoding='utf-8')
-                    dataVec = decoded_line[0:-1].split('!')
-                    if not self.output_file.closed:
-                        self.processFreeData(dataVec)
-                except Exception as e:
-                    print(e)
-                    self.io_task = self.root.after(IOSLEEPTIME, self.processInputs) # Schedule new read in 500 msec
-            case _: # No match
-                #print(controlChar)
-                pass
+                #self.storeTemps(line)
+            except Exception as e:
+                print(e)
+                print(line)
+                self.io_task = self.root.after(ERR_IOSLEEPTIME, self.processInputs)
+                return
+            #print("Temperature: %s" % line[0:-1])
+            self.str_currentTemp.set(line[0:-4]) #Increase number to reduce how many decimals are printed
+        elif controlChar == b'F': # Free Data. F character tells UI to expect 512 data points 
+            try:
+                self.SerialObj.timeout = 2
+                line = self.SerialObj.readline()
+                decoded_line = line.decode(encoding='utf-8')
+                dataVec = decoded_line[0:-1].split('!')
+                if not self.output_file.closed:
+                    self.processFreeData(dataVec)
+            except Exception as e:
+                print(e)
+                self.io_task = self.root.after(ERR_IOSLEEPTIME, self.processInputs) # Schedule new read in 500 msec
+        else: # No match
+            #print(controlChar)
+            pass
 
         self.io_task = self.root.after(IOSLEEPTIME, self.processInputs) # Schedule new read in 500 msec
 
@@ -497,7 +506,7 @@ class GenII_Interface:
             if freeRun:
                 csv_writer.writerow(['Ve', 'Vr'])
             else:
-                csv_writer.writerow(['Time', 'C1', 'C2', 'C3','C4','G1','G2','G3', 'G4'])
+                csv_writer.writerow(['Time', 'C1', 'C2', 'C3','C4','G1','G2','G3', 'G4', 'Temp'])
         
         # Reopen file in append mode to continuously write data
         self.output_file = open(self.filePath, 'a', newline = '')
@@ -550,24 +559,24 @@ class GenII_Interface:
             runT = "0" + runT
         
         sendData = bytearray('S' + runT + collectionInterval +  incTemp + '\n', 'ascii')
+        controlChar = 'X'
+        while controlChar != b'K':
+            try: 
+                self.SerialObj.timeout = 2
+                # Write test parameters
+                self.SerialObj.write(sendData)
 
-        try: 
-            self.SerialObj.timeout = 2
-            # Write test parameters
-            self.SerialObj.write(sendData)
+                controlChar = self.SerialObj.read(1);
+                if controlChar != b'K':
+                    print("Failed to write new test parameters")
+            except:
+                self.eqcStatus.set("Failed to Start test to COM Port")
 
-            controlChar = self.SerialObj.read(1);
-            if controlChar != b'K':
-                print("Failed to write new test parameters")
-                return
-            # Command new test
-            self.SerialObj.write(b'N\n')
-        except: 
-            self.eqcStatus.set("Failed to Start test to COM Port")
-            return
+        # Command new test
+        self.SerialObj.write(b'N\n')
         
         # Reinitialize data vectors
-        self.DataMat = np.empty((intrunT, 8))
+        self.DataMat = np.empty((intrunT, 9))
         self.DataMat[:] = np.nan
 
         self.countData = []
@@ -593,10 +602,10 @@ class GenII_Interface:
         return
     
 
-    def storeTemps(self, line):
-        with open('C://Users/cdeli/Desktop/TemperatureLog.csv', 'a', newline = '') as output_file:
-            csv_writer = csv.writer(output_file, delimiter = ',', quoting = csv.QUOTE_NONNUMERIC, quotechar='|')
-            csv_writer.writerow([float(line)])
+    #def storeTemps(self, line):
+    #    with open('C://Users/cdeli/Desktop/TemperatureLog.csv', 'a', newline = '') as output_file:
+    #        csv_writer = csv.writer(output_file, delimiter = ',', quoting = csv.QUOTE_NONNUMERIC, quotechar='|')
+    #        csv_writer.writerow([float(line)])
 
     def printAndStore(self, dataVec):
 
@@ -624,6 +633,11 @@ class GenII_Interface:
             l.set_ydata(self.DataMat[0:i, chan])
 
         #smallMat = self.DataMat[~np.isnan(self.DataMat)]
+        try:
+            self.DataMat[i-1, -1] = self.str_currentTemp.get()
+        except ValueError as e:
+            print(e)
+
         smallMat = self.DataMat[i-1]
 
         self.plot1.set_xlim(-1, np.floor((i-1)/30 + 1) * 30)
@@ -653,6 +667,7 @@ class GenII_Interface:
             print("Conductance: %0.4f +- %0.4f mS" % (DataMean[chan+4], DataStd[chan+4]))
         
         self.btn_text.set("Begin Measurement")
+        self.isMeasuring = 0;
         # Plot Data
         #self.plotData(self.filePath)
         return
@@ -695,11 +710,21 @@ class GenII_Interface:
             self.eqcStatus.set("Failed to Start test to COM Port")
         return
 
+    def on_close(self):
+         if tk.messagebox.askokcancel("Quit", "Do you want to quit the program?"):
+            if self.isMeasuring:
+                self.startStop()
+            if self.isHeating:
+                self.startHeating()
+            self.root.destroy()
+
 
 # Main Program Execution
 if __name__ == "__main__":
     print("Launching GenII Interface...")
     root = tk.Tk() # Create Root Tkinter Instance
     IOSLEEPTIME = 500
+    ERR_IOSLEEPTIME = 100
     app = GenII_Interface(root) # Create Main Application Object
+    root.protocol("WM_DELETE_WINDOW", app.on_close)
     root.mainloop();
