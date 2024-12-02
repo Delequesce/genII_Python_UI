@@ -48,7 +48,9 @@ class GenII_Interface:
         self.exit_code = bytearray([0, 1, 2, 3])
         self.countData = []
         self.channelList = []
+        self.channelBin = 0
         self.DataMat = []
+        self.oldDataVec = [0, 0, 0, 0, 0, 0, 0, 0]
         self.output_file = None
         self.csv_writer = None
         
@@ -165,7 +167,7 @@ class GenII_Interface:
             tempVar = tk.IntVar(value = 1);
             self.channelVars.append(tempVar);
             ttk.Checkbutton(fr_channels, text=f"Ch{i+1}",variable=tempVar, 
-                onvalue=1, offvalue=0).grid(row = int(i/2), column = i % 2, padx = 5, pady = 1)
+                onvalue=1, offvalue=0, command=lambda: self.root.after(200, self.channelAdjust)).grid(row = int(i/2), column = i % 2, padx = 5, pady = 1)
 
         return fr_params
     
@@ -378,17 +380,19 @@ class GenII_Interface:
             return
         self.cv_statusLights.itemconfig(self.light_EQC, fill="yellow")
         self.eqcStatus.set("Waiting for EQC to complete")
-        #self.root.after(3000, self.finishEQC) # Non-blocking wait until calibration has finished
         return
     
-    def finishEQC(self, rms_error):
+    def finishEQC(self, dataVec):
 
-        if rms_error > 10:
+        rmsd_C = float(dataVec[0])
+        rmsd_G = float(dataVec[1])
+
+        if rmsd_C > 5 or rmsd_G > 5:
             self.cv_statusLights.itemconfig(self.light_EQC, fill="red")
             self.eqcStatus.set("EQC Failed")
             return
 
-        print("EQC error value: %0.3f" % rms_error)
+        print("EQC RMSD Errors:\n C = %0.3f\n G = %0.3f" % (rmsd_C, rmsd_G))
     
         self.cv_statusLights.itemconfig(self.light_EQC, fill="green")
         self.eqcStatus.set("EQC Passed")
@@ -415,7 +419,7 @@ class GenII_Interface:
 
     # General handler function for serial comms
     def processInputs(self):
-        self.SerialObj.timeout = 1
+        self.SerialObj.timeout = 0.5
         try:
             # Read a single character from buffer
             controlChar = self.SerialObj.read(1);
@@ -451,11 +455,11 @@ class GenII_Interface:
             #print(decoded_line);
             dataVec = decoded_line[0:-1].split('!')
             if len(dataVec) < 8:
-                print(decoded_line)
-                #print(dataVec)
-            else:
-                self.countData.append(len(self.countData) + 1)
-                self.printAndStore(dataVec)
+                dataVec = self.oldDataVec
+
+            self.countData.append(len(self.countData) + 1)
+            self.printAndStore(dataVec)
+            self.oldDataVec = dataVec
 
         elif controlChar == b'C': # Calibration return values
             line = self.SerialObj.readline().decode(encoding='ascii', errors = 'ignore')
@@ -464,8 +468,22 @@ class GenII_Interface:
         elif controlChar == b'X': # Measurement finish
             self.finishTest()
         elif controlChar == b'Q':
-            line = self.SerialObj.readline().decode(encoding='ascii')
-            self.finishEQC(line[0:-1])
+            line = self.SerialObj.readline()
+            try:
+                decoded_line = line.decode(encoding='ascii')
+            except Exception as e:
+                print(e)
+                print(line)
+                self.io_task = self.root.after(ERR_IOSLEEPTIME, self.processInputs)
+                return
+            #print(decoded_line);
+            dataVec = decoded_line[0:-1].split('!')
+            if len(dataVec) < 2:
+                print(decoded_line)
+                #print(dataVec)
+            else:
+                self.finishEQC(dataVec)
+
         elif controlChar == b'T': # Temperature Reading
             try:
                 line = self.SerialObj.readline().decode(encoding='ascii')
@@ -592,9 +610,11 @@ class GenII_Interface:
         self.plot1.set_xlim(-1, 30)
 
         i = 0
+        self.channelBin = 0
         for var in self.channelVars:
             if var.get() == 1:
                 self.channelList.append(i)
+                self.channelBin = self.channelBin + (1 << i)
             i+=1
 
         # After function exits, input processing thread will continue to run and handle incoming data
@@ -623,6 +643,9 @@ class GenII_Interface:
 
         except Exception as e:
             print(e)
+            for C, G in zip(self.oldDataVec[0::2], self.oldDataVec[1::2]):
+                CVec.append(float(C[:-1]))
+                GVec.append(float(G[:-1]))
             return
 
         for chan in self.channelList:
@@ -631,6 +654,7 @@ class GenII_Interface:
             l = self.lines[chan]
             l.set_xdata(self.countData)
             l.set_ydata(self.DataMat[0:i, chan])
+            print(chan)
 
         #smallMat = self.DataMat[~np.isnan(self.DataMat)]
         try:
@@ -641,7 +665,8 @@ class GenII_Interface:
         smallMat = self.DataMat[i-1]
 
         self.plot1.set_xlim(-1, np.floor((i-1)/30 + 1) * 30)
-        self.plot1.set_ylim(np.min(smallMat[self.channelList])*0.9 - 1, np.max(smallMat[self.channelList])*1.3 + 1)
+        #self.plot1.set_ylim(np.min(smallMat[self.channelList])*0.9 - 1, np.max(smallMat[self.channelList])*1.3 + 1)
+        self.plot1.set_ylim(0, 400)
         self.canvas.draw()
 
         if self.csv_writer:
@@ -655,6 +680,9 @@ class GenII_Interface:
         if self.output_file:
             self.output_file.close();
         
+        if not self.countData:
+            return;
+
         self.DataMat = self.DataMat[0:self.countData[-1]]
 
         DataMean = np.mean(self.DataMat, 0)
@@ -709,6 +737,28 @@ class GenII_Interface:
         except: 
             self.eqcStatus.set("Failed to Start test to COM Port")
         return
+    
+    #def onClickcb(self):
+    #    print("Button Toggled")
+    #    self.root.after(200, self.channelAdjust)
+        return
+
+    def channelAdjust(self):
+        i = 0
+        #print("Channels Adjusted")
+        self.channelBin = 0
+        self.channelList = []
+        for var in self.channelVars:
+            if var.get() == 1:
+                self.channelList.append(i)
+                self.channelBin = self.channelBin + (1 << i)
+            i+=1
+
+        # Send to MCU
+        #sendData = bytearray('L' + str(self.channelBin) + '\n', 'ascii')
+        #self.SerialObj.write(sendData)
+        
+        return
 
     def on_close(self):
          if tk.messagebox.askokcancel("Quit", "Do you want to quit the program?"):
@@ -724,7 +774,7 @@ if __name__ == "__main__":
     print("Launching GenII Interface...")
     root = tk.Tk() # Create Root Tkinter Instance
     IOSLEEPTIME = 500
-    ERR_IOSLEEPTIME = 100
+    ERR_IOSLEEPTIME = 200
     app = GenII_Interface(root) # Create Main Application Object
     root.protocol("WM_DELETE_WINDOW", app.on_close)
     root.mainloop();
