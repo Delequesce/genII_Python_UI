@@ -418,98 +418,92 @@ class GenII_Interface:
         return
 
     # General handler function for serial comms
+    # Basically, it reads a character at a time and tries to match to controlCharacters.
+    # After X reads, it pauses to let other things run.
     def processInputs(self):
+        start_time = time.perf_counter()
         self.SerialObj.timeout = 0.5
-        try:
+        for i in range(self.SerialObj.in_waiting):
             # Read a single character from buffer
-            controlChar = self.SerialObj.read(1);
-           #print(controlChar)
-            #line = self.SerialObj.readline().decode(encoding='ascii')
-        except Exception as e:
-            print(e)
-            self.io_task = self.root.after(ERR_IOSLEEPTIME, self.processInputs) # Schedule new read in 500 msec
-            return
-
-        if controlChar == b'' or controlChar[0] < 65:
-            self.io_task = self.root.after(ERR_IOSLEEPTIME, self.processInputs)
-            return
-
-        if controlChar == b'E': # Error Code
-            line = self.SerialObj.readline()
-            try:
-                decoded_line = line.decode(encoding='ascii')
-            except Exception as e:
-                print(e);
-                self.io_task = self.root.after(ERR_IOSLEEPTIME, self.processInputs) # Schedule new read in 500 msec
-                return
-            print(decoded_line[0:-1])
-        elif controlChar == b'D': # Data (C and G)
-            line = self.SerialObj.readline()
-            try:
-                decoded_line = line.decode(encoding='ascii')
-            except Exception as e:
-                print(e)
-                print(line)
-                self.io_task = self.root.after(ERR_IOSLEEPTIME, self.processInputs)
-                return
-            #print(decoded_line);
-            dataVec = decoded_line[0:-1].split('!')
-            if len(dataVec) < 8:
-                dataVec = self.oldDataVec
-
-            self.countData.append(len(self.countData) + 1)
-            self.printAndStore(dataVec)
-            self.oldDataVec = dataVec
-
-        elif controlChar == b'C': # Calibration return values
-            line = self.SerialObj.readline().decode(encoding='ascii', errors = 'ignore')
-            dataVec = line[0:-1].split('!')
-            self.finishCalibration(dataVec)
-        elif controlChar == b'X': # Measurement finish
-            self.finishTest()
-        elif controlChar == b'Q':
-            line = self.SerialObj.readline()
-            try:
-                decoded_line = line.decode(encoding='ascii')
-            except Exception as e:
-                print(e)
-                print(line)
-                self.io_task = self.root.after(ERR_IOSLEEPTIME, self.processInputs)
-                return
-            #print(decoded_line);
-            dataVec = decoded_line[0:-1].split('!')
-            if len(dataVec) < 2:
-                print(decoded_line)
-                #print(dataVec)
-            else:
-                self.finishEQC(dataVec)
-
-        elif controlChar == b'T': # Temperature Reading
-            try:
-                line = self.SerialObj.readline().decode(encoding='ascii')
-                #self.storeTemps(line)
-            except Exception as e:
-                print(e)
-                print(line)
-                self.io_task = self.root.after(ERR_IOSLEEPTIME, self.processInputs)
-                return
-            #print("Temperature: %s" % line[0:-1])
-            self.str_currentTemp.set(line[0:-4]) #Increase number to reduce how many decimals are printed
-        elif controlChar == b'F': # Free Data. F character tells UI to expect 512 data points 
-            try:
-                self.SerialObj.timeout = 2
+            controlChar = self.SerialObj.read(1)
+            if controlChar == b'E': # Error Code
                 line = self.SerialObj.readline()
-                decoded_line = line.decode(encoding='utf-8')
+                try:
+                    decoded_line = line.decode(encoding='ascii')
+                except Exception as e:
+                    print(e);
+                    self.io_task = self.root.after(ERR_IOSLEEPTIME, self.processInputs) # Schedule new read in 500 msec
+                    return
+                print(decoded_line[0:-1])
+            elif controlChar == b'D': # Data (C and G)
+                line = self.SerialObj.readline()
+                try:
+                    decoded_line = line.decode(encoding='ascii')
+                except Exception as e:
+                    print(e)
+                    print(line)
+                    self.io_task = self.root.after(ERR_IOSLEEPTIME, self.processInputs)
+                    return
+                #print(decoded_line);
                 dataVec = decoded_line[0:-1].split('!')
-                if not self.output_file.closed:
-                    self.processFreeData(dataVec)
-            except Exception as e:
-                print(e)
-                self.io_task = self.root.after(ERR_IOSLEEPTIME, self.processInputs) # Schedule new read in 500 msec
-        else: # No match
-            #print(controlChar)
-            pass
+                if len(dataVec) < 8:
+                    dataVec = self.oldDataVec
 
+                self.countData.append(len(self.countData) + 1)
+                self.printAndStore(dataVec)
+                self.oldDataVec = dataVec
+
+            elif controlChar == b'C': # Calibration return values
+                line = self.SerialObj.readline().decode(encoding='ascii', errors = 'ignore')
+                dataVec = line[0:-1].split('!')
+                self.finishCalibration(dataVec)
+            elif controlChar == b'X': # Measurement finish
+                self.finishTest()
+            elif controlChar == b'Q':
+                line = self.SerialObj.readline()
+                try:
+                    decoded_line = line.decode(encoding='ascii')
+                except Exception as e:
+                    print(e)
+                    print(line)
+                    self.io_task = self.root.after(ERR_IOSLEEPTIME, self.processInputs)
+                    return
+                #print(decoded_line);
+                dataVec = decoded_line[0:-1].split('!')
+                if len(dataVec) < 2:
+                    print(decoded_line)
+                    #print(dataVec)
+                else:
+                    self.finishEQC(dataVec)
+            elif controlChar == b'T': # Temperature Reading
+                try:
+                    line = self.SerialObj.readline().decode(encoding='ascii')
+                    #self.storeTemps(line)
+                except Exception as e:
+                    print(e)
+                    print(line)
+                    self.io_task = self.root.after(ERR_IOSLEEPTIME, self.processInputs)
+                    return
+                #print("Temperature: %s" % line[0:-1])
+                self.str_currentTemp.set(line[0:-4]) #Increase number to reduce how many decimals are printed
+            elif controlChar == b'F': # Free Data. F character tells UI to expect 512 data points 
+                try:
+                    self.SerialObj.timeout = 2
+                    line = self.SerialObj.readline()
+                    decoded_line = line.decode(encoding='utf-8')
+                    dataVec = decoded_line[0:-1].split('!')
+                    if not self.output_file.closed:
+                        self.processFreeData(dataVec)
+                except Exception as e:
+                    print(e)
+                    self.io_task = self.root.after(ERR_IOSLEEPTIME, self.processInputs) # Schedule new read in 500 msec
+            else:
+                continue
+
+            break
+        # If one of the characters was matched, break loop and move on.
+        #elapsedTime = time.perf_counter() - start_time
+        #print(f"Time Elapsed: {elapsedTime}")
         self.io_task = self.root.after(IOSLEEPTIME, self.processInputs) # Schedule new read in 500 msec
 
     # Command board to begin taking measurements and sending data    
@@ -519,16 +513,16 @@ class GenII_Interface:
         freeRun = self.freeRunVar.get()
         
         # Clear output file and write header
-        with open(self.filePath, 'w', newline = '') as output_file:
-            csv_writer = csv.writer(output_file, delimiter = ',', quoting = csv.QUOTE_NONNUMERIC, quotechar='|')
-            if freeRun:
-                csv_writer.writerow(['Ve', 'Vr'])
-            else:
-                csv_writer.writerow(['Time', 'C1', 'C2', 'C3','C4','G1','G2','G3', 'G4', 'Temp'])
-        
-        # Reopen file in append mode to continuously write data
-        self.output_file = open(self.filePath, 'a', newline = '')
-        self.csv_writer = csv.writer(self.output_file, delimiter = ',', quoting=csv.QUOTE_NONNUMERIC)
+        if self.filePath:
+            with open(self.filePath, 'w', newline = '') as output_file:
+                csv_writer = csv.writer(output_file, delimiter = ',', quoting = csv.QUOTE_NONNUMERIC, quotechar='|')
+                if freeRun:
+                    csv_writer.writerow(['Ve', 'Vr'])
+                else:
+                    csv_writer.writerow(['Time', 'C1', 'C2', 'C3','C4','G1','G2','G3', 'G4', 'Temp'])
+            # Reopen file in append mode to continuously write data
+            self.output_file = open(self.filePath, 'a', newline = '')
+            self.csv_writer = csv.writer(self.output_file, delimiter = ',', quoting=csv.QUOTE_NONNUMERIC)
 
         if freeRun:
             try: 
@@ -654,7 +648,6 @@ class GenII_Interface:
             l = self.lines[chan]
             l.set_xdata(self.countData)
             l.set_ydata(self.DataMat[0:i, chan])
-            print(chan)
 
         #smallMat = self.DataMat[~np.isnan(self.DataMat)]
         try:
@@ -678,8 +671,9 @@ class GenII_Interface:
         
         # End of Experiment
         if self.output_file:
+            self.csv_writer = None
             self.output_file.close();
-        
+            
         if not self.countData:
             return;
 
@@ -732,6 +726,7 @@ class GenII_Interface:
         try: 
             self.SerialObj.timeout = 1
             self.SerialObj.write(b'X\n') # Cancel Ongoing Test
+            self.csv_writer = None
             self.output_file.close()
             print("Collection Finished.")
         except: 
