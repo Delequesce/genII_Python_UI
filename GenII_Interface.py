@@ -43,6 +43,7 @@ class GenII_Interface:
         # Flags
         self.isHeating = 0
         self.isMeasuring = 0
+        self.clickedFlag = 0
 
         # Other
         self.exit_code = bytearray([0, 1, 2, 3])
@@ -59,7 +60,7 @@ class GenII_Interface:
         
 
     def createTopWindow(self, root):
-        root.minsize(root.winfo_width(), root.winfo_height())
+        #root.minsize(root.winfo_width(), root.winfo_height())
         # Get Height of Screen
         #width = int(root.winfo_screenwidth()/4)
         #height = int(root.winfo_screenheight()*0.75)
@@ -76,7 +77,7 @@ class GenII_Interface:
 
         # Frames and canvases
         fr_main = ttk.Frame(root);
-        cv_statusLights = tk.Canvas(fr_main, width = 100, height = 100)
+        cv_statusLights = tk.Canvas(fr_main, width = 50, height = 100)
         #fr_main.pack()
         
         # Buttons
@@ -107,9 +108,9 @@ class GenII_Interface:
         lbl_deviceStatus = ttk.Label(fr_main, textvariable=self.deviceStatus)
         lbl_eqcStatus = ttk.Label(fr_main, textvariable = self.eqcStatus)
         lbl_calibStatus = ttk.Label(fr_main, textvariable = self.calibStatus)
-        lbl_deviceStatus.grid(row = 0, column = 2, padx = 5, pady = 5)
-        lbl_eqcStatus.grid(row = 1, column = 2, padx = 5, pady = 5)
-        lbl_calibStatus.grid(row = 2, column = 2, padx = 5, pady = 5)
+        lbl_deviceStatus.grid(row = 0, column = 2, padx = 0, pady = 5)
+        lbl_eqcStatus.grid(row = 1, column = 2, padx = 0, pady = 5)
+        lbl_calibStatus.grid(row = 2, column = 2, padx = 0, pady = 5)
 
         #root.update()
 
@@ -130,23 +131,23 @@ class GenII_Interface:
         fr_filePath.grid(row = 3, column = 1, columnspan = 2)
 
         # Labels
-        lbl_runTime = ttk.Label(fr_params, text = "Run Time (min)")
-        lbl_incTemp = ttk.Label(fr_params, text = "Incubation Temperature (C)")
+        lbl_runTime = ttk.Label(fr_params, text = "Run Time (sec)")
+        lbl_incTemp = ttk.Label(fr_params, text = "Incubation\nTemperature (C)")
         lbl_channels = ttk.Label(fr_params, text = "Active Channels")
         lbl_fpath = ttk.Label(fr_params, text= "Filepath")
-        lbl_runTime.grid(row = 0, column = 0, padx = 5, pady = 5)
-        lbl_incTemp.grid(row = 1, column = 0, padx = 5, pady = 5)
-        lbl_channels.grid(row = 2, column = 0, padx = 5, pady = 5)
-        lbl_fpath.grid(row = 3, column = 0, padx = 5, pady = 5)
+        lbl_runTime.grid(row = 0, column = 0, padx = 0, pady = 5)
+        lbl_incTemp.grid(row = 1, column = 0, padx = 0, pady = 5)
+        lbl_channels.grid(row = 2, column = 0, padx = 0, pady = 5)
+        lbl_fpath.grid(row = 3, column = 0, padx = 0, pady = 5)
 
         # Entry Boxes
         
-        ent_runTime = ttk.Entry(fr_params, textvariable= self.str_runT, width = 10)
-        ent_incTemp = ttk.Entry(fr_params, textvariable= self.str_incTemp, width = 10)
-        ent_filePath = ttk.Entry(fr_filePath, textvariable= self.str_filePath, width = 50)
-        ent_runTime.grid(row = 0, column = 1, padx = 5, pady = 5)
-        ent_incTemp.grid(row = 1, column = 1, padx = 5, pady = 5)
-        ent_filePath.grid(row = 0, column = 1, columnspan = 2, pady = 5)
+        ent_runTime = ttk.Entry(fr_params, textvariable= self.str_runT, width = 5)
+        ent_incTemp = ttk.Entry(fr_params, textvariable= self.str_incTemp, width = 5)
+        ent_filePath = ttk.Entry(fr_filePath, textvariable= self.str_filePath, width = 30)
+        ent_runTime.grid(row = 0, column = 1, padx = 0, pady = 0)
+        ent_incTemp.grid(row = 1, column = 1, padx = 0, pady = 0)
+        ent_filePath.grid(row = 0, column = 1, columnspan = 2, pady = 0)
         #ent_filePath.bind("<1>", self.openSaveDialog) # Will launch when entry box is left-clicked
 
         # Buttons
@@ -172,21 +173,21 @@ class GenII_Interface:
         return fr_params
     
     def creatTestRunWindow(self, root):
-        fr_testWindow = ttk.Frame(root)
-        fr_leftInfo = ttk.Frame(fr_testWindow);
-        fr_vis = ttk.Frame(fr_testWindow)
-        fr_paramEst = ttk.Labelframe(fr_testWindow, text = "Current Parameter Estimates", labelanchor='n')
+        self.fr_testWindow = ttk.Frame(root)
+        self.fr_leftInfo = ttk.Frame(self.fr_testWindow);
+        self.fr_vis = ttk.LabelFrame(self.fr_testWindow, text = "Plot Boundaries")
+        fr_paramEst = ttk.Labelframe(self.fr_testWindow, text = "Current Parameter Estimates", labelanchor='n')
 
         # Components
         self.heatBtn_text = tk.StringVar(value = "Start Heating")
-        btn_startHeating = ttk.Button(fr_leftInfo, textvariable = self.heatBtn_text, style = "AccentButton", command = self.startHeating)
+        btn_startHeating = ttk.Button(self.fr_leftInfo, textvariable = self.heatBtn_text, style = "AccentButton", command = self.startHeating)
         self.btn_text = tk.StringVar(value = "Begin Measurement")
-        btn_beginMeasurement = ttk.Button(fr_leftInfo, textvariable = self.btn_text, style = "AccentButton", command = self.startStop)
-        btn_loadData = ttk.Button(fr_leftInfo, text = "Load Data", style = "AccentButton", command = self.loadAndPlotData)
-        btn_back  = ttk.Button(fr_leftInfo, text = "Back", style = "AccentButton", command = self.previous)
+        btn_beginMeasurement = ttk.Button(self.fr_leftInfo, textvariable = self.btn_text, style = "AccentButton", command = self.startStop)
+        btn_loadData = ttk.Button(self.fr_leftInfo, text = "Load Data", style = "AccentButton", command = self.loadAndPlotData)
+        btn_back  = ttk.Button(self.fr_leftInfo, text = "Back", style = "AccentButton", command = self.previous)
 
-        lbl_tempLabel = ttk.Label(fr_leftInfo, text="Current Temp (C):")
-        lbl_currentTemp = ttk.Label(fr_leftInfo, textvariable=self.str_currentTemp)
+        lbl_tempLabel = ttk.Label(self.fr_leftInfo, text="Current Temp (C):")
+        lbl_currentTemp = ttk.Label(self.fr_leftInfo, textvariable=self.str_currentTemp)
 
         lbl_tpeak = ttk.Label(fr_paramEst, text = "Tpeak")
         lbl_deltaEps = ttk.Label(fr_paramEst, text = u'{x}{y}max'.format(x = '\u0394', y = '\u03B5'))
@@ -196,35 +197,59 @@ class GenII_Interface:
         lbl_deltaEps_est_conf = ttk.Label(fr_paramEst, textvariable=self.str_deltaEps_est_conf)
         
         # Layout Grid
-        fr_leftInfo.grid(row = 0, column = 0)
-        fr_paramEst.grid(row = 1, column=0)
-        fr_vis.grid(row = 0, column = 1, rowspan=2, columnspan=3)
+        self.fr_leftInfo.grid(row = 0, column = 0)
+        #fr_paramEst.grid(row = 1, column=0)
+        self.fr_vis.grid(row = 0, column = 1, rowspan=2, columnspan=3)
         btn_startHeating.grid(row = 0, column = 0, columnspan=2, pady = 5)
         lbl_tempLabel.grid(row = 1, column = 0, pady = 5)
         lbl_currentTemp.grid(row = 1, column = 1, pady = 5)
-        btn_beginMeasurement.grid(row = 2, column = 0, columnspan=2)
-        btn_loadData.grid(row=3, column = 0, columnspan=2)
-        btn_back.grid(row = 4, column = 0, columnspan=2)
-        lbl_tpeak.grid(row = 0, column = 0, padx = 5, pady = 5)
-        lbl_deltaEps.grid(row = 1, column = 0, padx = 5, pady = 5)
-        lbl_tpeak_est.grid(row = 0, column = 2, padx = 5, pady = 5)
-        lbl_deltaEps_est.grid(row = 1, column = 2, padx = 5, pady = 5)
-        lbl_tpeak_est_conf.grid(row = 0, column = 3, padx = 5, pady = 5)
-        lbl_deltaEps_est_conf.grid(row = 1, column = 3, padx = 5, pady = 5)
+        btn_beginMeasurement.grid(row = 2, column = 0, columnspan=2, pady=2)
+        btn_loadData.grid(row=3, column = 0, columnspan=2, pady=2)
+        btn_back.grid(row = 4, column = 0, columnspan=2, pady=2)
+        #lbl_tpeak.grid(row = 0, column = 0, padx = 5, pady = 5)
+        #lbl_deltaEps.grid(row = 1, column = 0, padx = 5, pady = 5)
+        #lbl_tpeak_est.grid(row = 0, column = 2, padx = 5, pady = 5)
+        #lbl_deltaEps_est.grid(row = 1, column = 2, padx = 5, pady = 5)
+        #lbl_tpeak_est_conf.grid(row = 0, column = 3, padx = 5, pady = 5)
+        #lbl_deltaEps_est_conf.grid(row = 1, column = 3, padx = 5, pady = 5)
 
         # Plot
-        fig = Figure(figsize = (5.7, 2.5), dpi = 100)
-        plot1 = fig.add_axes([0.1, 0.3, 0.8, 0.6], autoscale_on = True)
+        self.fig = Figure(figsize = (3, 3), dpi = 100)
+        plot1 = self.fig.add_axes([0.25, 0.35, 0.7, 0.556], autoscale_on = True)
         plot1.set_xlabel("Time (s)")
         plot1.set_ylabel("Capacitance (pF)")
         self.plot1 = plot1
 
         # Visual Frame
-        self.canvas = FigureCanvasTkAgg(fig, master = fr_vis)
+        self.canvas = FigureCanvasTkAgg(self.fig, master = self.fr_vis)
+        
+        # Bind key press
+        self.canvas.get_tk_widget().bind("<Button-1>", self.grow_shrink_canvas)
+
         self.canvas.draw()
         self.canvas.get_tk_widget().pack()
 
-        return fr_testWindow
+        return self.fr_testWindow
+    
+    def grow_shrink_canvas(self, event):
+        print("Canvas Clicked")
+        if self.clickedFlag:
+            self.fr_leftInfo.grid(row = 0, column = 0)
+            self.fig.set_figwidth(3)
+            #self.plot1.set_position([0.25, 0.35, 0.7, 0.556])
+            self.canvas.draw()
+        else:
+            # Remove other elements from grid and expand canvas
+            self.fr_leftInfo.grid_remove()
+            #self.fr_vis.grid_remove()
+            self.fig.set_figwidth(4)
+            #self.plot1.set_position([0.25, 0.35, 1, 0.6])
+            self.canvas.draw()
+
+        # Toggle Flag
+        self.clickedFlag^=1
+         
+        return
 
     def forward(self):
         for fr in self.frameList:
@@ -268,28 +293,31 @@ class GenII_Interface:
 
         ret = 0;
 
-        list = serial.tools.list_ports.comports()
-        connected = []
-        print("Connected COM ports:") 
-        if len(list) == 1:
-            genII_port = list[0].device
-        for element in list:
-            connected.append(element.device)
-            print(str(element.device) + ": " + element.description)
+        windows = True
+        if windows:
+            list = serial.tools.list_ports.comports()
+            connected = []
+            print("Connected COM ports:") 
+            if len(list) == 1:
+                genII_port = list[0].device
+            for element in list:
+                connected.append(element.device)
+                print(str(element.device) + ": " + element.description)
             if element.manufacturer == 'SEGGER':
                 genII_port = element.device
-
-        # if sys.platform.startswith('win'):
-        #     ports = ['COM%s' % (i+1) for i in range(256)]
-        # elif sys.platform.startswith('linux') or sys.platform.startswith('cygwin'):
-        #     ports = glob.glob('/dev/tty[A-Za-z]*')
-        # elif sys.platform.startswith('darwin'):
-        #     ports = glob.glob('/dev/tty.*')
-        # else:
-        #     raise EnvironmentError('Unsupported platform')
-
+            if sys.platform.startswith('win'):
+                ports = ['COM%s' % (i+1) for i in range(256)]
+            elif sys.platform.startswith('linux') or sys.platform.startswith('cygwin'):
+                ports = glob.glob('/dev/tty[A-Za-z]*')
+            elif sys.platform.startswith('darwin'):
+                ports = glob.glob('/dev/tty.*')
+            else:
+                raise EnvironmentError('Unsupported platform')
+        else:
+            genII_port = "/dev/ttyS0"
+        
         #port = input("Enter the requested port number to connect")
-        SerialObj = serial.Serial(baudrate = 115200, timeout = 5) # Port is immediately opened upon creation. 
+        SerialObj = serial.Serial(baudrate = 115200, timeout = 5) # Port is immediately opened upon creation.         
         SerialObj.port = genII_port
         SerialObj.bytesize = 8
         SerialObj.partiy = 'N'
@@ -511,6 +539,7 @@ class GenII_Interface:
         invalid = 0
         self.filePath = self.str_filePath.get()
         freeRun = self.freeRunVar.get()
+        self.plotRange = np.array([0, 200])
         
         # Clear output file and write header
         if self.filePath:
@@ -595,12 +624,12 @@ class GenII_Interface:
         # Initialize plot
         self.plot1.cla()
         for i in range(4):
-            self.plot1.plot([], [], 'o-', label = f"Channel {i+1}", markersize=4)
+            self.plot1.plot([], [], 'o-', label = f"Ch {i+1}", markersize=4)
 
         self.lines = self.plot1.get_lines()
         self.plot1.set_xlabel("Time (s)")
         self.plot1.set_ylabel("Capacitance (pF)")
-        self.plot1.legend(loc='upper left')
+        self.plot1.legend(loc='upper left', prop={'size':6})
         self.plot1.set_xlim(-1, 30)
 
         i = 0
@@ -656,10 +685,14 @@ class GenII_Interface:
             print(e)
 
         smallMat = self.DataMat[i-1]
+        self.plotRange[0] = np.min(np.append(smallMat[self.channelList], self.plotRange[0]))
+        self.plotRange[1] = np.max(np.append(smallMat[self.channelList], self.plotRange[1]))
+
+        #print(self.plotRange)
 
         self.plot1.set_xlim(-1, np.floor((i-1)/30 + 1) * 30)
-        #self.plot1.set_ylim(np.min(smallMat[self.channelList])*0.9 - 1, np.max(smallMat[self.channelList])*1.3 + 1)
-        self.plot1.set_ylim(0, 400)
+        self.plot1.set_ylim(self.plotRange[0]-1, self.plotRange[1]+1)
+        #self.plot1.set_ylim(0, 400)
         self.canvas.draw()
 
         if self.csv_writer:
@@ -768,6 +801,9 @@ class GenII_Interface:
 if __name__ == "__main__":
     print("Launching GenII Interface...")
     root = tk.Tk() # Create Root Tkinter Instance
+    root.geometry("480x272")
+    root.minsize(480,272)
+    root.maxsize(480,272)
     IOSLEEPTIME = 500
     ERR_IOSLEEPTIME = 200
     app = GenII_Interface(root) # Create Main Application Object
