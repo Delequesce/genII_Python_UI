@@ -32,10 +32,14 @@ class GenII_Interface:
         self.str_incTemp = tk.StringVar(value = "37")
         self.str_currentTemp = tk.StringVar(value= "N/A")
         self.str_heaterStatus = tk.StringVar(value="Heater Off")
-        self.str_tpeak_est = tk.StringVar(value = "0s")
-        self.str_deltaEps_est = tk.StringVar(value = "0")
-        self.str_tpeak_est_conf = tk.StringVar(value = "0%")
-        self.str_deltaEps_est_conf = tk.StringVar(value = "0%")
+        self.str_tpeak_est = []
+        self.str_deltaEps_est = []
+        for i in range(4):
+            self.str_tpeak_est.append(tk.StringVar(value = "0 min")) 
+            self.str_deltaEps_est.append(tk.StringVar(value = "0"))
+
+        #self.str_tpeak_est_conf = tk.StringVar(value = "0%")
+        #self.str_deltaEps_est_conf = tk.StringVar(value = "0%")
         self.timerVar = tk.StringVar()
         self.timerVar.set('')
 
@@ -43,6 +47,7 @@ class GenII_Interface:
         self.frameList.append(self.createTopWindow(root)) # Create a top window element for root instance
         self.frameList.append(self.createParamWindow(root))
         self.frameList.append(self.creatTestRunWindow(root))
+        self.frameList.append(self.createResultsWindow(root))
 
         # Flags
         self.isHeating = 0
@@ -182,7 +187,6 @@ class GenII_Interface:
         self.fr_testWindow = ttk.Frame(root)
         self.fr_leftInfo = ttk.Frame(self.fr_testWindow)
         self.fr_vis = ttk.Frame(self.fr_testWindow)
-        fr_paramEst = ttk.Labelframe(self.fr_testWindow, text = "Current Parameter Estimates", labelanchor='n')
 
         # Button Text Arrays
         self.heatBtnText = ["Start Heating", "Stop Heating"]
@@ -196,22 +200,14 @@ class GenII_Interface:
         btn_beginMeasurement = ttk.Button(self.fr_leftInfo, textvariable = self.btn_text, style = "AccentButton", command = self.startStop)
         btn_loadData = ttk.Button(self.fr_leftInfo, text = "Load Data", style = "AccentButton", command = self.loadAndPlotData)
         btn_back  = ttk.Button(self.fr_leftInfo, text = "Back", style = "AccentButton", command = self.previous)
+        btn_results = ttk.Button(self.fr_leftInfo, text = "Results", style = "AccentButton", command = self.forward)
 
         lbl_tempLabel = ttk.Label(self.fr_leftInfo, text="Current Temp (C):")
         lbl_heaterStatus = ttk.Label(self.fr_leftInfo, textvariable = self.str_heaterStatus)
         lbl_currentTemp = ttk.Label(self.fr_leftInfo, textvariable=self.str_currentTemp)
-
-        lbl_tpeak = ttk.Label(fr_paramEst, text = "Tpeak")
-        lbl_deltaEps = ttk.Label(fr_paramEst, text = u'{x}{y}max'.format(x = '\u0394', y = '\u03B5'))
-        lbl_tpeak_est = ttk.Label(fr_paramEst, textvariable=self.str_tpeak_est)
-        lbl_deltaEps_est = ttk.Label(fr_paramEst, textvariable=self.str_deltaEps_est)
-        lbl_tpeak_est_conf = ttk.Label(fr_paramEst, textvariable=self.str_tpeak_est_conf)
-        lbl_deltaEps_est_conf = ttk.Label(fr_paramEst, textvariable=self.str_deltaEps_est_conf)
         
         # Layout Grid
         self.fr_leftInfo.grid(row = 0, column = 0)
-        #fr_paramEst.grid(row = 1, column=0)
-        #self.fr_vis.pack()#.grid(row = 0, column = 0, rowspan=2, columnspan=3)
         btn_startHeating.grid(row = 0, column = 0, columnspan=2, pady = 2)
         lbl_heaterStatus.grid(row = 1, column = 0, columnspan= 2, pady = 2)
         lbl_tempLabel.grid(row = 2, column = 0, pady = 2)
@@ -219,12 +215,7 @@ class GenII_Interface:
         btn_beginMeasurement.grid(row = 3, column = 0, columnspan=2, pady=2)
         btn_loadData.grid(row=4, column = 0, columnspan=2, pady=2)
         btn_back.grid(row = 5, column = 0, columnspan=2, pady=2)
-        #lbl_tpeak.grid(row = 0, column = 0, padx = 5, pady = 5)
-        #lbl_deltaEps.grid(row = 1, column = 0, padx = 5, pady = 5)
-        #lbl_tpeak_est.grid(row = 0, column = 2, padx = 5, pady = 5)
-        #lbl_deltaEps_est.grid(row = 1, column = 2, padx = 5, pady = 5)
-        #lbl_tpeak_est_conf.grid(row = 0, column = 3, padx = 5, pady = 5)
-        #lbl_deltaEps_est_conf.grid(row = 1, column = 3, padx = 5, pady = 5)
+        btn_results.grid(row = 6, column = 0, columnspan=2, pady = 2)
 
         # Plot
         self.fig = Figure(figsize = (3, 3), dpi = 100)
@@ -239,14 +230,61 @@ class GenII_Interface:
         # Bind key press
         self.canvas.get_tk_widget().bind("<Button-1>", self.grow_shrink_canvas)
         self.canvas.get_tk_widget().pack(expand=True, fill=tk.BOTH)
-        #self.canvas.get_tk_widget().pack(expand=True, fill=tk.BOTH)
 
         self.canvas.draw()
-        #self.canvas.get_tk_widget().pack()
         self.fr_vis.grid(row = 0, column = 1, rowspan=2, columnspan=3)
 
         return self.fr_testWindow
     
+
+    def createResultsWindow(self, root):
+        fr_resultsWindow = ttk.Frame(root)
+        fr_resultsParams = ttk.LabelFrame(fr_resultsWindow, text = "TraumaChek Output Variables")
+        fr_resultsParams.grid(row=0, column=0, columnspan=3)
+
+        lbl_chan1 = ttk.Label(fr_resultsParams, text = "Ch 1")
+        lbl_chan2 = ttk.Label(fr_resultsParams, text = "Ch 2")
+        lbl_chan3 = ttk.Label(fr_resultsParams, text = "Ch 3")
+        lbl_chan4 = ttk.Label(fr_resultsParams, text = "Ch 4")
+        lbl_tpeak = ttk.Label(fr_resultsParams, text = "Tpeak")
+        lbl_deltaEps = ttk.Label(fr_resultsParams, text = u'{x}{y}max'.format(x = '\u0394', y = '\u03B5'))
+        lbl_tpeak_est = []
+        lbl_deltaEps_est = []
+        for x in self.str_tpeak_est:
+            lbl_tpeak_est.append(ttk.Label(fr_resultsParams, textvariable=x))
+        
+        for x in self.str_deltaEps_est:
+            lbl_deltaEps_est.append(ttk.Label(fr_resultsParams, textvariable=x))
+
+        #lbl_tpeak_est_conf = ttk.Label(fr_resultsParams, textvariable=self.str_tpeak_est_conf)
+        #lbl_deltaEps_est_conf = ttk.Label(fr_resultsParams, textvariable=self.str_deltaEps_est_conf)
+
+        lbl_chan1.grid(row = 0, column = 1, padx = 5, pady = 5)
+        lbl_chan2.grid(row = 0, column = 2, padx = 5, pady = 5)
+        lbl_chan3.grid(row = 0, column = 3, padx = 5, pady = 5)
+        lbl_chan4.grid(row = 0, column = 4, padx = 5, pady = 5)
+        lbl_tpeak.grid(row = 1, column = 0, padx = 5, pady = 5)
+        lbl_deltaEps.grid(row = 2, column = 0, padx = 5, pady = 5)
+
+        i = 1
+        for x in lbl_tpeak_est:
+            x.grid(row = 1, column = i, padx = 5, pady = 5)
+            i+=1
+        
+        i = 1
+        for x in lbl_deltaEps_est:
+            x.grid(row = 2, column = i, padx = 5, pady = 5)
+            i+=1
+
+        #lbl_tpeak_est_conf.grid(row = 0, column = 3, padx = 5, pady = 5)
+        #lbl_deltaEps_est_conf.grid(row = 1, column = 3, padx = 5, pady = 5)
+
+        btn_back  = ttk.Button(fr_resultsWindow, text = "Back", style = "AccentButton", command = self.previous)
+        btn_back.grid(row=1, column = 0, columnspan=1)
+
+        return fr_resultsWindow
+
+
     def grow_shrink_canvas(self, event):
         print("Canvas Clicked")
         if self.clickedFlag:
@@ -443,11 +481,8 @@ class GenII_Interface:
         
         print("Countdown Complete")
         self.timerVar.set('')
-        
-
     
     def finishEQC(self, dataVec):
-
         rmsd_C = float(dataVec[0])
         rmsd_G = float(dataVec[1])
 
