@@ -57,7 +57,6 @@ class GenII_Interface:
         
         # Initialize first frame
         self.forward()
-        
 
     def createTopWindow(self, root):
         #root.minsize(root.winfo_width(), root.winfo_height())
@@ -165,8 +164,8 @@ class GenII_Interface:
 
         self.channelVars = []
         for i in range(4):
-            tempVar = tk.IntVar(value = 1);
-            self.channelVars.append(tempVar);
+            tempVar = tk.IntVar(value = 1)
+            self.channelVars.append(tempVar)
             ttk.Checkbutton(fr_channels, text=f"Ch{i+1}",variable=tempVar, 
                 onvalue=1, offvalue=0, command=lambda: self.root.after(200, self.channelAdjust)).grid(row = int(i/2), column = i % 2, padx = 5, pady = 1)
 
@@ -174,8 +173,8 @@ class GenII_Interface:
     
     def creatTestRunWindow(self, root):
         self.fr_testWindow = ttk.Frame(root)
-        self.fr_leftInfo = ttk.Frame(self.fr_testWindow);
-        self.fr_vis = ttk.LabelFrame(self.fr_testWindow, text = "Plot Boundaries")
+        self.fr_leftInfo = ttk.Frame(self.fr_testWindow)
+        self.fr_vis = ttk.Frame(self.fr_testWindow)
         fr_paramEst = ttk.Labelframe(self.fr_testWindow, text = "Current Parameter Estimates", labelanchor='n')
 
         # Components
@@ -199,7 +198,7 @@ class GenII_Interface:
         # Layout Grid
         self.fr_leftInfo.grid(row = 0, column = 0)
         #fr_paramEst.grid(row = 1, column=0)
-        self.fr_vis.grid(row = 0, column = 1, rowspan=2, columnspan=3)
+        #self.fr_vis.pack()#.grid(row = 0, column = 0, rowspan=2, columnspan=3)
         btn_startHeating.grid(row = 0, column = 0, columnspan=2, pady = 5)
         lbl_tempLabel.grid(row = 1, column = 0, pady = 5)
         lbl_currentTemp.grid(row = 1, column = 1, pady = 5)
@@ -225,9 +224,12 @@ class GenII_Interface:
         
         # Bind key press
         self.canvas.get_tk_widget().bind("<Button-1>", self.grow_shrink_canvas)
+        self.canvas.get_tk_widget().pack(expand=True, fill=tk.BOTH)
+        #self.canvas.get_tk_widget().pack(expand=True, fill=tk.BOTH)
 
         self.canvas.draw()
-        self.canvas.get_tk_widget().pack()
+        #self.canvas.get_tk_widget().pack()
+        self.fr_vis.grid(row = 0, column = 1, rowspan=2, columnspan=3)
 
         return self.fr_testWindow
     
@@ -235,16 +237,21 @@ class GenII_Interface:
         print("Canvas Clicked")
         if self.clickedFlag:
             self.fr_leftInfo.grid(row = 0, column = 0)
-            self.fig.set_figwidth(3)
-            #self.plot1.set_position([0.25, 0.35, 0.7, 0.556])
+            #self.fig.set_figwidth(3)
+            self.canvas.get_tk_widget().configure(width = 300)
+            self.plot1.set_position([0.25, 0.35, 0.7, 0.556])
             self.canvas.draw()
         else:
             # Remove other elements from grid and expand canvas
             self.fr_leftInfo.grid_remove()
             #self.fr_vis.grid_remove()
-            self.fig.set_figwidth(4)
-            #self.plot1.set_position([0.25, 0.35, 1, 0.6])
+            #self.fr_vis.pack_forget()
+            #self.fig.set_figwidth(4)
+            self.canvas.get_tk_widget().configure(width = 480)
+            self.plot1.set_position([0.15, 0.35, 0.8, 0.556])
             self.canvas.draw()
+            #self.fr_vis.pack()
+
 
         # Toggle Flag
         self.clickedFlag^=1
