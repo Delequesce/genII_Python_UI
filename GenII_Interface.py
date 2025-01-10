@@ -1,4 +1,5 @@
 from matplotlib.figure import Figure
+from RingBuffer import *
 import tkinter as tk
 import tkinter.ttk as ttk
 import numpy as np
@@ -30,10 +31,13 @@ class GenII_Interface:
         self.str_runT = tk.StringVar(value = "30")
         self.str_incTemp = tk.StringVar(value = "37")
         self.str_currentTemp = tk.StringVar(value= "N/A")
+        self.str_heaterStatus = tk.StringVar(value="Heater Off")
         self.str_tpeak_est = tk.StringVar(value = "0s")
         self.str_deltaEps_est = tk.StringVar(value = "0")
         self.str_tpeak_est_conf = tk.StringVar(value = "0%")
         self.str_deltaEps_est_conf = tk.StringVar(value = "0%")
+        self.timerVar = tk.StringVar()
+        self.timerVar.set('')
 
         # Frames
         self.frameList.append(self.createTopWindow(root)) # Create a top window element for root instance
@@ -54,6 +58,8 @@ class GenII_Interface:
         self.oldDataVec = [0, 0, 0, 0, 0, 0, 0, 0]
         self.output_file = None
         self.csv_writer = None
+        self.tempArray = RingBuffer(10)
+        self.tempStabilityThreshold = 0.5
         
         # Initialize first frame
         self.forward()
@@ -75,7 +81,7 @@ class GenII_Interface:
         style.configure("AccentButton", foreground = 'white')
 
         # Frames and canvases
-        fr_main = ttk.Frame(root);
+        fr_main = ttk.Frame(root)
         cv_statusLights = tk.Canvas(fr_main, width = 50, height = 100)
         #fr_main.pack()
         
@@ -95,7 +101,7 @@ class GenII_Interface:
         cButton_height = btn_connect.winfo_height()
         eqcButton_y = btn_EQC.winfo_y()
         cButton_height = btn_connect.winfo_height()
-        offset = 20;
+        offset = 20
         light_size = int(cButton_height/2); 
         light_connect = cv_statusLights.create_oval(10, cButton_y + 5, 10 + light_size, cButton_y + light_size+5)
         light_EQC = cv_statusLights.create_oval(10, eqcButton_y + offset, 10 + light_size, eqcButton_y+light_size + offset)
@@ -107,11 +113,12 @@ class GenII_Interface:
         lbl_deviceStatus = ttk.Label(fr_main, textvariable=self.deviceStatus)
         lbl_eqcStatus = ttk.Label(fr_main, textvariable = self.eqcStatus)
         lbl_calibStatus = ttk.Label(fr_main, textvariable = self.calibStatus)
+        lbl_eqcTimer = ttk.Label(fr_main, textvariable=self.timerVar)
         lbl_deviceStatus.grid(row = 0, column = 2, padx = 0, pady = 5)
         lbl_eqcStatus.grid(row = 1, column = 2, padx = 0, pady = 5)
+        lbl_eqcTimer.grid(row = 1, column = 3)
         lbl_calibStatus.grid(row = 2, column = 2, padx = 0, pady = 5)
-
-        #root.update()
+        
 
         # Assign variables to class
         self.cv_statusLights = cv_statusLights
@@ -177,15 +184,21 @@ class GenII_Interface:
         self.fr_vis = ttk.Frame(self.fr_testWindow)
         fr_paramEst = ttk.Labelframe(self.fr_testWindow, text = "Current Parameter Estimates", labelanchor='n')
 
+        # Button Text Arrays
+        self.heatBtnText = ["Start Heating", "Stop Heating"]
+        self.measBtnText = ["Begin Measurement", "Stop Measurement"]
+        self.heaterStatus = ["Heater Off", "Heating System", "Stable Temperature Achieved"]
+
         # Components
-        self.heatBtn_text = tk.StringVar(value = "Start Heating")
+        self.heatBtn_text = tk.StringVar(value = self.heatBtnText[0])
         btn_startHeating = ttk.Button(self.fr_leftInfo, textvariable = self.heatBtn_text, style = "AccentButton", command = self.startHeating)
-        self.btn_text = tk.StringVar(value = "Begin Measurement")
+        self.btn_text = tk.StringVar(value = self.measBtnText[0])
         btn_beginMeasurement = ttk.Button(self.fr_leftInfo, textvariable = self.btn_text, style = "AccentButton", command = self.startStop)
         btn_loadData = ttk.Button(self.fr_leftInfo, text = "Load Data", style = "AccentButton", command = self.loadAndPlotData)
         btn_back  = ttk.Button(self.fr_leftInfo, text = "Back", style = "AccentButton", command = self.previous)
 
         lbl_tempLabel = ttk.Label(self.fr_leftInfo, text="Current Temp (C):")
+        lbl_heaterStatus = ttk.Label(self.fr_leftInfo, textvariable = self.str_heaterStatus)
         lbl_currentTemp = ttk.Label(self.fr_leftInfo, textvariable=self.str_currentTemp)
 
         lbl_tpeak = ttk.Label(fr_paramEst, text = "Tpeak")
@@ -199,12 +212,13 @@ class GenII_Interface:
         self.fr_leftInfo.grid(row = 0, column = 0)
         #fr_paramEst.grid(row = 1, column=0)
         #self.fr_vis.pack()#.grid(row = 0, column = 0, rowspan=2, columnspan=3)
-        btn_startHeating.grid(row = 0, column = 0, columnspan=2, pady = 5)
-        lbl_tempLabel.grid(row = 1, column = 0, pady = 5)
-        lbl_currentTemp.grid(row = 1, column = 1, pady = 5)
-        btn_beginMeasurement.grid(row = 2, column = 0, columnspan=2, pady=2)
-        btn_loadData.grid(row=3, column = 0, columnspan=2, pady=2)
-        btn_back.grid(row = 4, column = 0, columnspan=2, pady=2)
+        btn_startHeating.grid(row = 0, column = 0, columnspan=2, pady = 2)
+        lbl_heaterStatus.grid(row = 1, column = 0, columnspan= 2, pady = 2)
+        lbl_tempLabel.grid(row = 2, column = 0, pady = 2)
+        lbl_currentTemp.grid(row = 2, column = 1, pady = 2)
+        btn_beginMeasurement.grid(row = 3, column = 0, columnspan=2, pady=2)
+        btn_loadData.grid(row=4, column = 0, columnspan=2, pady=2)
+        btn_back.grid(row = 5, column = 0, columnspan=2, pady=2)
         #lbl_tpeak.grid(row = 0, column = 0, padx = 5, pady = 5)
         #lbl_deltaEps.grid(row = 1, column = 0, padx = 5, pady = 5)
         #lbl_tpeak_est.grid(row = 0, column = 2, padx = 5, pady = 5)
@@ -281,12 +295,12 @@ class GenII_Interface:
         return
 
     def startStop(self):
-        self.isMeasuring^=1;
+        self.isMeasuring^=1
         if self.isMeasuring:
-            self.btn_text.set("Stop Measurement")
+            self.btn_text.set(self.measBtnText[1])
             self.beginMeasurement()
         else:
-            self.btn_text.set("Begin Measurement")
+            self.btn_text.set(self.measBtnText[0])
             self.cancelMeasurement()
 
         return
@@ -298,7 +312,7 @@ class GenII_Interface:
 #             csv_writer = csv.writer(output_file, delimiter = ',', quoting = csv.QUOTE_NONNUMERIC, quotechar='|')
 #             csv_writer.writerow(["Temperature"])
 
-        ret = 0;
+        ret = 0
 
         windows = True
         if windows:
@@ -409,13 +423,28 @@ class GenII_Interface:
 
     def performEQC(self):
         try: 
-            self.SerialObj.write(b'Q\n')
+           self.SerialObj.write(b'Q\n')
         except: 
-            self.eqcStatus.set("Failed to Write to COM Port")
-            return
+           self.eqcStatus.set("Failed to Write to COM Port")
+           return
         self.cv_statusLights.itemconfig(self.light_EQC, fill="yellow")
-        self.eqcStatus.set("Waiting for EQC to complete")
+        self.eqcStatus.set("EQC Running:")
+        print("Starting Countdown")
+        self.startTimer(30)
         return
+    
+    def startTimer(self, time):
+        if time > 1:
+            # Set initial time
+            self.timerVar.set(str(time))
+            # Call method every second until end
+            self.root.after(1000, lambda: self.startTimer(time-1))
+            return
+        
+        print("Countdown Complete")
+        self.timerVar.set('')
+        
+
     
     def finishEQC(self, dataVec):
 
@@ -434,22 +463,29 @@ class GenII_Interface:
         return
     
     def startHeating(self):
-        self.isHeating^=1
 
-        if self.isHeating:
-            self.heatBtn_text.set("Stop Heating")
-            try: 
-                self.SerialObj.write(b'H\n')
-            except: 
-                self.eqcStatus.set("Failed to Write to COM Port")
+        # Toggle Heater State and wait for response
+        self.SerialObj.write(b'H\n')
+        time.sleep(1)
+        #i = 0
+        #while self.SerialObj.in_waiting < 1 and i < 10:
+        #    i+=1
+        #    pass
+        if self.SerialObj.in_waiting:
+            if self.SerialObj.read(1) != b'K':
+                self.str_heaterStatus.set("Heater Error")
                 return
-        else:
-            self.heatBtn_text.set("Start Heating")
-            try: 
-                self.SerialObj.write(b'H\n')
-            except: 
-                self.eqcStatus.set("Failed to Write to COM Port")
-                return
+        
+        # Status is Idle -> Heating -> Stable
+        stat = self.str_heaterStatus.get()
+        if stat is self.heaterStatus[0]: #Idle, Start Heating
+            self.str_heaterStatus.set(self.heaterStatus[1])
+            self.heatBtn_text.set(self.heatBtnText[1])
+        else: # Stop Heating
+            self.str_heaterStatus.set(self.heaterStatus[0])
+            self.heatBtn_text.set(self.heatBtnText[0])
+            self.tempArray = RingBuffer(10) # Re-initialize temperature array as empty Ring Buffer
+        
         return
 
     # General handler function for serial comms
@@ -521,6 +557,13 @@ class GenII_Interface:
                     return
                 #print("Temperature: %s" % line[0:-1])
                 self.str_currentTemp.set(line[0:-4]) #Increase number to reduce how many decimals are printed
+                
+                # Create moving average to see when temperature becomes stable (if last X measurements were within Y degrees of each other)
+                if self.isHeating:
+                    self.tempArray.add(float(line[0:-4]))
+                    if np.std(self.tempArray.data) < self.tempStabilityThreshold:
+                        self.str_heaterStatus.set(self.heaterStatus[2])
+
             elif controlChar == b'F': # Free Data. F character tells UI to expect 512 data points 
                 try:
                     self.SerialObj.timeout = 2
@@ -547,6 +590,13 @@ class GenII_Interface:
         self.filePath = self.str_filePath.get()
         freeRun = self.freeRunVar.get()
         self.plotRange = np.array([0, 200])
+
+        # Cancel Any previously ongoing test on MCU End
+        try: 
+            self.SerialObj.timeout = 1
+            self.SerialObj.write(b'X\n')
+        except: 
+            print("Test Cancel Failure")
         
         # Clear output file and write header
         if self.filePath:
