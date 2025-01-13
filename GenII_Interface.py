@@ -53,6 +53,7 @@ class GenII_Interface:
         self.isHeating = 0
         self.isMeasuring = 0
         self.clickedFlag = 0
+        self.dontInterrupt = False
 
         # Other
         self.exit_code = bytearray([0, 1, 2, 3])
@@ -485,14 +486,26 @@ class GenII_Interface:
     def finishEQC(self, dataVec):
         rmsd_C = float(dataVec[0])
         rmsd_G = float(dataVec[1])
-
-        if rmsd_C > 5 or rmsd_G > 5:
-            self.cv_statusLights.itemconfig(self.light_EQC, fill="red")
-            self.eqcStatus.set("EQC Failed")
-            return
+        noise_C = float(dataVec[2])
+        noise_G = float(dataVec[3])
 
         print("EQC RMSD Errors:\n C = %0.3f\n G = %0.3f" % (rmsd_C, rmsd_G))
-    
+        print("EQC Noise:\n C = %0.3f\n G = %0.3f" % (noise_C, noise_G))
+        eqcFail = False
+        if rmsd_C > 5 or rmsd_G > 5:
+            self.cv_statusLights.itemconfig(self.light_EQC, fill="red")
+            self.eqcStatus.set("EQC Failed: Accuracy")
+            eqcFail = True
+        
+        if noise_C > 0.5 or noise_G > 0.1:
+            self.cv_statusLights.itemconfig(self.light_EQC, fill="red")
+            self.eqcStatus.set("EQC Failed: Noise")
+            eqcFail = True
+        
+        if eqcFail:
+            return
+        
+
         self.cv_statusLights.itemconfig(self.light_EQC, fill="green")
         self.eqcStatus.set("EQC Passed")
         return
@@ -500,6 +513,7 @@ class GenII_Interface:
     def startHeating(self):
 
         # Toggle Heater State and wait for response
+        self.dontInterrupt = True
         self.SerialObj.write(b'H\n')
         time.sleep(1)
         #i = 0
@@ -521,12 +535,16 @@ class GenII_Interface:
             self.heatBtn_text.set(self.heatBtnText[0])
             self.tempArray = RingBuffer(10) # Re-initialize temperature array as empty Ring Buffer
         
+        self.dontInterrupt = False
         return
 
     # General handler function for serial comms
     # Basically, it reads a character at a time and tries to match to controlCharacters.
     # After X reads, it pauses to let other things run.
     def processInputs(self):
+        if self.dontInterrupt:
+            self.io_task = self.root.after(IOSLEEPTIME, self.processInputs)
+            return
         start_time = time.perf_counter()
         self.SerialObj.timeout = 0.5
         for i in range(self.SerialObj.in_waiting):
