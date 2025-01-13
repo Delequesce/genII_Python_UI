@@ -12,6 +12,8 @@ NavigationToolbar2Tk)
 
 class GenII_Interface:
 
+    TEMPARRAYSIZE = 60
+
     def __init__(self, root):
 
         self.root = root
@@ -64,7 +66,7 @@ class GenII_Interface:
         self.oldDataVec = [0, 0, 0, 0, 0, 0, 0, 0]
         self.output_file = None
         self.csv_writer = None
-        self.tempArray = RingBuffer(10)
+        self.tempArray = RingBuffer(self.TEMPARRAYSIZE)
         self.tempStabilityThreshold = 0.5
         
         # Initialize first frame
@@ -287,7 +289,7 @@ class GenII_Interface:
 
 
     def grow_shrink_canvas(self, event):
-        print("Canvas Clicked")
+        #print("Canvas Clicked")
         if self.clickedFlag:
             self.fr_leftInfo.grid(row = 0, column = 0)
             #self.fig.set_figwidth(3)
@@ -336,7 +338,6 @@ class GenII_Interface:
     def startStop(self):
         self.isMeasuring^=1
         if self.isMeasuring:
-            self.btn_text.set(self.measBtnText[1])
             self.beginMeasurement()
         else:
             self.btn_text.set(self.measBtnText[0])
@@ -353,7 +354,7 @@ class GenII_Interface:
 
         ret = 0
 
-        windows = True
+        windows = False
         if windows:
             list = serial.tools.list_ports.comports()
             connected = []
@@ -374,7 +375,8 @@ class GenII_Interface:
             else:
                 raise EnvironmentError('Unsupported platform')
         else:
-            genII_port = "/dev/ttyS0"
+            #genII_port = "/dev/ttyS0"
+            genII_port = "/dev/ttyACM0"
         
         #port = input("Enter the requested port number to connect")
         SerialObj = serial.Serial(baudrate = 115200, timeout = 5) # Port is immediately opened upon creation.         
@@ -388,42 +390,25 @@ class GenII_Interface:
             #SerialObj = serial.Serial('/dev/ttyS3') # Port is immediately opened upon creation. 
             SerialObj.open()
             print("Port Succesfully Opened")
+            # Save open serial object for future communications
+            self.SerialObj = SerialObj
         except Exception as e:
             self.deviceStatus.set("Failed to Access COM Port")
             print(e)
             return
 
-        SerialObj.reset_output_buffer()
-
         # Wakeup and Check Connection Status Command. Function is blocking until timeout
-        try: 
-            SerialObj.reset_input_buffer()
-            SerialObj.write(b'C\n')
-            print("Connection Command Written to Port")
-        except: # Timeout exception
-             self.deviceStatus.set("Failed to Write to COM Port")
-             return        
-
-        # Wait for MCU to Process and write return data
-
-        time.sleep(1)
-        
-        try: 
-            statusReturn = SerialObj.readline(1)[0]  # MCU should have acknowledged write and responded with single byte, 'K'
-        except: # Timeout exception
-             self.deviceStatus.set("Failed to Read from COM Port")
-             return
-        if statusReturn != 75: # Ascii 'K'
-            self.deviceStatus.set("Device Failed to Connect")
-            print("Device did not acknowledge connection request")
-            return
+        self.cv_statusLights.itemconfig(self.light_connect, fill="yellow")
+        SerialObj.reset_input_buffer()
+        SerialObj.reset_output_buffer()
+        if not self.deviceAck(2, 3, b'C\n'):
+            print("Failed to Connect to Device")
+            self.cv_statusLights.itemconfig(self.light_connect, fill="red")
+            return 
 
         # Update UI with connection status
         self.deviceStatus.set("Device Successfully Connected")
         self.cv_statusLights.itemconfig(self.light_connect, fill="green")
-
-        # Return open serial object for future communications
-        self.SerialObj = SerialObj
 
         # Flush Buffers to await new temperature data 
         self.SerialObj.reset_input_buffer()
@@ -513,31 +498,49 @@ class GenII_Interface:
     def startHeating(self):
 
         # Toggle Heater State and wait for response
-        self.dontInterrupt = True
-        self.SerialObj.write(b'H\n')
-        time.sleep(1)
-        #i = 0
-        #while self.SerialObj.in_waiting < 1 and i < 10:
-        #    i+=1
-        #    pass
-        if self.SerialObj.in_waiting:
-            if self.SerialObj.read(1) != b'K':
-                self.str_heaterStatus.set("Heater Error")
-                return
+        if not self.deviceAck(10, 1, b'H\n'):
+            self.str_heaterStatus.set("Heater Error")
+            return
         
         # Status is Idle -> Heating -> Stable
         stat = self.str_heaterStatus.get()
-        if stat is self.heaterStatus[0]: #Idle, Start Heating
+        if stat == self.heaterStatus[0]: #Idle, Start Heating
             self.str_heaterStatus.set(self.heaterStatus[1])
             self.heatBtn_text.set(self.heatBtnText[1])
         else: # Stop Heating
             self.str_heaterStatus.set(self.heaterStatus[0])
             self.heatBtn_text.set(self.heatBtnText[0])
-            self.tempArray = RingBuffer(10) # Re-initialize temperature array as empty Ring Buffer
+            self.tempArray = RingBuffer(self.TEMPARRAYSIZE) # Re-initialize temperature array as empty Ring Buffer
         
         self.dontInterrupt = False
         return
 
+    # Function that checks for 'K' response from MCU for a variety of reasons
+    def deviceAck(self, N_Count, N_Attempt, writeData):
+        self.SerialObj.timeout = 1
+        self.dontInterrupt = True
+        acked = False
+        attemptCounter = 0
+        while attemptCounter < N_Attempt:
+            count = 0
+            while count < N_Count:
+                try: 
+                    self.SerialObj.write(writeData)
+                except: 
+                    print("Write Error to COM Port")
+                
+                acked = (self.SerialObj.read(1) == b'K')
+                if acked:
+                    self.dontInterrupt = False
+                    return 1
+
+                count+=1
+
+            attemptCounter+=1
+
+        self.dontInterrupt = False
+        return 0
+    
     # General handler function for serial comms
     # Basically, it reads a character at a time and tries to match to controlCharacters.
     # After X reads, it pauses to let other things run.
@@ -602,7 +605,7 @@ class GenII_Interface:
             elif controlChar == b'T': # Temperature Reading
                 try:
                     line = self.SerialObj.readline().decode(encoding='ascii')
-                    #self.storeTemps(line)
+                    #print(line)
                 except Exception as e:
                     print(e)
                     print(line)
@@ -612,7 +615,7 @@ class GenII_Interface:
                 self.str_currentTemp.set(line[0:-4]) #Increase number to reduce how many decimals are printed
                 
                 # Create moving average to see when temperature becomes stable (if last X measurements were within Y degrees of each other)
-                if self.isHeating:
+                if self.isHeating and len(self.tempArray.data) == self.TEMPARRAYSIZE:
                     self.tempArray.add(float(line[0:-4]))
                     if np.std(self.tempArray.data) < self.tempStabilityThreshold:
                         self.str_heaterStatus.set(self.heaterStatus[2])
@@ -708,24 +711,21 @@ class GenII_Interface:
         # Adjust run time byte length for transmission
         for i in range(4-N_bytes_1):
             runT = "0" + runT
-        
+        self.dontInterrupt = True
         sendData = bytearray('S' + runT + collectionInterval +  incTemp + '\n', 'ascii')
-        controlChar = 'X'
-        while controlChar != b'K':
-            try: 
-                self.SerialObj.timeout = 2
-                # Write test parameters
-                self.SerialObj.write(sendData)
-
-                controlChar = self.SerialObj.read(1);
-                if controlChar != b'K':
-                    print("Failed to write new test parameters")
-            except:
-                self.eqcStatus.set("Failed to Start test to COM Port")
+        
+        # Write new test params to device
+        if not self.deviceAck(10, 5, sendData):
+            print("Failed to Write new test parameters")
+            self.cancelMeasurement()
+            return 
 
         # Command new test
+        self.dontInterrupt = False
         self.SerialObj.write(b'N\n')
         
+        self.btn_text.set(self.measBtnText[1])
+
         # Reinitialize data vectors
         self.DataMat = np.empty((intrunT, 9))
         self.DataMat[:] = np.nan
