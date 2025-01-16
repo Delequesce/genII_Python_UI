@@ -30,18 +30,18 @@ class GenII_Interface:
 
         # Variables for labels and entries
         self.str_filePath = tk.StringVar()
-        self.str_runT = tk.StringVar(value = "30")
+        self.str_runT = tk.StringVar(value = "1800")
         self.str_incTemp = tk.StringVar(value = "37")
         self.str_currentTemp = tk.StringVar(value= "N/A")
         self.str_heaterStatus = tk.StringVar(value="Heater Off")
         self.str_tpeak_est = []
         self.str_deltaEps_est = []
+        self.str_smax_est = []
         for i in range(4):
-            self.str_tpeak_est.append(tk.StringVar(value = "0 min")) 
-            self.str_deltaEps_est.append(tk.StringVar(value = "0"))
+            self.str_tpeak_est.append(tk.StringVar(value = "n/a")) 
+            self.str_deltaEps_est.append(tk.StringVar(value = "n/a"))
+            self.str_smax_est.append(tk.StringVar(value = "n/a"))
 
-        #self.str_tpeak_est_conf = tk.StringVar(value = "0%")
-        #self.str_deltaEps_est_conf = tk.StringVar(value = "0%")
         self.timerVar = tk.StringVar()
         self.timerVar.set('')
 
@@ -173,8 +173,8 @@ class GenII_Interface:
         btn_fileEdit.grid(row = 0, column = 0) # Should be just to the left of the filepath text box
 
         # Free run checkbox
-        self.freeRunVar = tk.IntVar(value = 0)
-        ttk.Checkbutton(fr_params, text = "Free Run",variable=self.freeRunVar, onvalue=1, offvalue=0).grid(row = 2, column = 2)
+        #self.freeRunVar = tk.IntVar(value = 0)
+        #ttk.Checkbutton(fr_params, text = "Free Run",variable=self.freeRunVar, onvalue=1, offvalue=0).grid(row = 2, column = 2)
 
 
         self.channelVars = []
@@ -251,16 +251,18 @@ class GenII_Interface:
         lbl_chan4 = ttk.Label(fr_resultsParams, text = "Ch 4")
         lbl_tpeak = ttk.Label(fr_resultsParams, text = "Tpeak")
         lbl_deltaEps = ttk.Label(fr_resultsParams, text = u'{x}{y}max'.format(x = '\u0394', y = '\u03B5'))
+        lbl_smax = ttk.Label(fr_resultsParams, text = "smax")
         lbl_tpeak_est = []
         lbl_deltaEps_est = []
+        lbl_smax_est = []
         for x in self.str_tpeak_est:
             lbl_tpeak_est.append(ttk.Label(fr_resultsParams, textvariable=x))
         
         for x in self.str_deltaEps_est:
             lbl_deltaEps_est.append(ttk.Label(fr_resultsParams, textvariable=x))
 
-        #lbl_tpeak_est_conf = ttk.Label(fr_resultsParams, textvariable=self.str_tpeak_est_conf)
-        #lbl_deltaEps_est_conf = ttk.Label(fr_resultsParams, textvariable=self.str_deltaEps_est_conf)
+        for x in self.str_smax_est:
+            lbl_smax_est.append(ttk.Label(fr_resultsParams, textvariable=x))
 
         lbl_chan1.grid(row = 0, column = 1, padx = 5, pady = 5)
         lbl_chan2.grid(row = 0, column = 2, padx = 5, pady = 5)
@@ -268,6 +270,7 @@ class GenII_Interface:
         lbl_chan4.grid(row = 0, column = 4, padx = 5, pady = 5)
         lbl_tpeak.grid(row = 1, column = 0, padx = 5, pady = 5)
         lbl_deltaEps.grid(row = 2, column = 0, padx = 5, pady = 5)
+        lbl_smax.grid(row = 3, column = 0, padx = 5, pady = 5)
 
         i = 1
         for x in lbl_tpeak_est:
@@ -279,8 +282,10 @@ class GenII_Interface:
             x.grid(row = 2, column = i, padx = 5, pady = 5)
             i+=1
 
-        #lbl_tpeak_est_conf.grid(row = 0, column = 3, padx = 5, pady = 5)
-        #lbl_deltaEps_est_conf.grid(row = 1, column = 3, padx = 5, pady = 5)
+        i = 1
+        for x in lbl_smax_est:
+            x.grid(row = 3, column = i, padx = 5, pady = 5)
+            i+=1
 
         btn_back  = ttk.Button(fr_resultsWindow, text = "Back", style = "AccentButton", command = self.previous)
         btn_back.grid(row=1, column = 0, columnspan=1)
@@ -332,6 +337,8 @@ class GenII_Interface:
 
     def loadAndPlotData(self):
         readDataFilePath = askopenfilename(defaultextension=".csv", filetypes=[("CSV Files", "*.csv")])
+        if not readDataFilePath:
+            return
         self.plotData(readDataFilePath)
         return
 
@@ -441,7 +448,7 @@ class GenII_Interface:
         
         print(printString % (dataVec[0], dataVec[1], dataVec[2], dataVec[3], dataVec[4], dataVec[5], dataVec[6], dataVec[7]))
     
-        self.eqcStatus.set("Calibration Successful")
+        self.calibStatus.set("Calibration Successful")
         return
 
 
@@ -620,17 +627,17 @@ class GenII_Interface:
                     if np.std(self.tempArray.data) < self.tempStabilityThreshold:
                         self.str_heaterStatus.set(self.heaterStatus[2])
 
-            elif controlChar == b'F': # Free Data. F character tells UI to expect 512 data points 
-                try:
-                    self.SerialObj.timeout = 2
-                    line = self.SerialObj.readline()
-                    decoded_line = line.decode(encoding='utf-8')
-                    dataVec = decoded_line[0:-1].split('!')
-                    if not self.output_file.closed:
-                        self.processFreeData(dataVec)
-                except Exception as e:
-                    print(e)
-                    self.io_task = self.root.after(ERR_IOSLEEPTIME, self.processInputs) # Schedule new read in 500 msec
+            # elif controlChar == b'F': # Free Data. F character tells UI to expect 512 data points 
+            #     try:
+            #         self.SerialObj.timeout = 2
+            #         line = self.SerialObj.readline()
+            #         decoded_line = line.decode(encoding='utf-8')
+            #         dataVec = decoded_line[0:-1].split('!')
+            #         if not self.output_file.closed:
+            #             self.processFreeData(dataVec)
+            #     except Exception as e:
+            #         print(e)
+            #         self.io_task = self.root.after(ERR_IOSLEEPTIME, self.processInputs) # Schedule new read in 500 msec
             else:
                 continue
 
@@ -644,7 +651,7 @@ class GenII_Interface:
     def beginMeasurement(self):
         invalid = 0
         self.filePath = self.str_filePath.get()
-        freeRun = self.freeRunVar.get()
+        #freeRun = self.freeRunVar.get()
         self.plotRange = np.array([0, 200])
 
         # Cancel Any previously ongoing test on MCU End
@@ -658,22 +665,22 @@ class GenII_Interface:
         if self.filePath:
             with open(self.filePath, 'w', newline = '') as output_file:
                 csv_writer = csv.writer(output_file, delimiter = ',', quoting = csv.QUOTE_NONNUMERIC, quotechar='|')
-                if freeRun:
-                    csv_writer.writerow(['Ve', 'Vr'])
-                else:
-                    csv_writer.writerow(['Time', 'C1', 'C2', 'C3','C4','G1','G2','G3', 'G4', 'Temp'])
+                # if freeRun:
+                #     csv_writer.writerow(['Ve', 'Vr'])
+                #else:
+                csv_writer.writerow(['Time', 'C1', 'C2', 'C3','C4','G1','G2','G3', 'G4', 'Temp'])
             # Reopen file in append mode to continuously write data
             self.output_file = open(self.filePath, 'a', newline = '')
             self.csv_writer = csv.writer(self.output_file, delimiter = ',', quoting=csv.QUOTE_NONNUMERIC)
 
-        if freeRun:
-            try: 
-                self.SerialObj.timeout = 1
-                self.SerialObj.write(b'F\n') # Free run
-                print("Starting Free Run")
-            except: 
-                self.eqcStatus.set("Failed to Start test to COM Port")
-            return
+        # if freeRun:
+        #     try: 
+        #         self.SerialObj.timeout = 1
+        #         self.SerialObj.write(b'F\n') # Free run
+        #         print("Starting Free Run")
+        #     except: 
+        #         self.eqcStatus.set("Failed to Start test to COM Port")
+        #     return
 
         # Send command to device to start measurement. Cancel reads during this process
         #tk.after_cancel(self.io_task)
@@ -818,52 +825,157 @@ class GenII_Interface:
             self.output_file.close();
             
         if not self.countData:
-            return;
+            return
 
         self.DataMat = self.DataMat[0:self.countData[-1]]
 
         DataMean = np.mean(self.DataMat, 0)
         DataStd = np.std(self.DataMat, 0)
+        N = len(self.countData)
 
-        print("%d samples successfully read" % (len(self.countData)))
+        print("%d samples successfully read" % (N))
         for chan in self.channelList:
             print(f"Channel {chan}: ")
             print("Capacitance: %0.4f +- %0.4f pF" % (DataMean[chan], DataStd[chan]))
             print("Conductance: %0.4f +- %0.4f mS" % (DataMean[chan+4], DataStd[chan+4]))
         
+        # Calculate Output Parameters, if necessary
+        if self.isMeasuring:
+            self.calculateParameters(self.DataMat, self.channelList)
+
         self.btn_text.set("Begin Measurement")
-        self.isMeasuring = 0;
-        # Plot Data
-        #self.plotData(self.filePath)
+        self.isMeasuring = 0
         return
 
-    def processFreeData(self, dataVec):
+    def caclulateParameters(self, DataMat, channelList):
+        simpleMax = False
+        N, M = DataMat.shape
+        Tpeak = np.zeros(M)
+        Tpeak[:] = np.nan
+        DeltaEps = np.zeros(M)
+        DeltaEps[:] = np.nan
+        smax = np.zeros(M)
+        smax[:] = np.nan
+        normC = np.zeros((N, M))
+        normSlp = np.zeros((N-1, M))
+        startJ = 60 # Number of seconds to start looking for Tpeak After
+        N_slp_ma = 3
+        N_C_ma = 12
+        cnv_window_c = np.ones(N_C_ma)
+        cnv_window_slp = np.ones(N_slp_ma)
+        for chan in channelList:
+            Cdata = DataMat[:,chan]
+            Cdata_filt = np.convolve(Cdata, cnv_window_c, 'valid')/N_C_ma
+            Cdata_filt = np.concatenate((Cdata[:(N_C_ma-1)], Cdata_filt))
+            C_slp = np.diff(Cdata_filt)
+            C_slp_filt = np.convolve(C_slp, cnv_window_slp, 'valid')/N_slp_ma
+            C_slp_filt = np.concatenate((C_slp[:(N_slp_ma-1)], C_slp_filt))
+            if simpleMax: # Maximum Value
+                TpeakI = np.argmax(Cdata)
+                Tpeak[chan] = Cdata[TpeakI]
+            else: # Zero Crossing
+                j = 0
+                changeArray = C_slp_filt < 0
+                tempArr = np.where(changeArray[startJ:N-1])[0]
+                tempArr = tempArr[:5] + startJ
+                #print(tempArr)
+                if len(tempArr) < 2:
+                    continue
+                while tempArr[j+1] > tempArr[j]:
+                    j+=1
+                    if j == 4:
+                        mFlag = 1
+                        break
+
+                if mFlag:
+                    TpeakI = round(np.median(tempArr))
+                else:
+                    TpeakI = tempArr[j]
+
+                Tpeak[chan] = TpeakI
+
+            # Normalize Data
+            maxPf = Cdata[TpeakI]
+            normC[:,chan] = np.divide(Cdata,maxPf)
+            normSlp[:,chan] = np.divide(C_slp, maxPf)
+
+            # Delta Epsilon
+            # Stop condition is Slope < 0.00002
+            # Once normC has fallen by 1% from peak (0.01)
+            deltaEpsI = np.nan
+            if simpleMax:
+                DeltaEps[chan] = np.min(Cdata[TpeakI:])
+            else:
+                slope_thresh = -0.00002
+                fall_thresh = 0.99
+                if TpeakI != N:
+                    for n, val in enumerate(normSlp[TpeakI:, chan]):
+                        if normC[n + TpeakI, chan] > fall_thresh:
+                            continue
+
+                        if val > slope_thresh:
+                            deltaEpsI = TpeakI + n
+                            DeltaEps[chan] = np.round(1-normC[deltaEpsI, chan], 4)
+                            break
+            
+            # Find Smax
+            endCheck = N if np.isnan(deltaEpsI) else deltaEpsI + 1
+            smaxI = TpeakI + np.argmin(normC[TpeakI:endCheck, chan])
+            smax[chan] = np.abs(np.round(normC[smaxI, chan], 4))
+
+            # Store values
+            self.str_tpeak_est[chan].set(Tpeak[chan])
+            self.str_deltaEps_est[chan].set(DeltaEps[chan])
+            self.str_smax_est[chan].set(smax[chan])
+
+
+
+    # def processFreeData(self, dataVec):
         
-        print("Writing %d datapoints" % len(dataVec))
+    #     print("Writing %d datapoints" % len(dataVec))
         
-        for i in range(0, 64, 2):
-            self.csv_writer.writerow([dataVec[i], dataVec[i+1]])
+    #     for i in range(0, 64, 2):
+    #         self.csv_writer.writerow([dataVec[i], dataVec[i+1]])
         
-        #print("All Clear Sent")
-        self.SerialObj.write(b'K\n') # Send all clear to receive more data
-        return
+    #     #print("All Clear Sent")
+    #     self.SerialObj.write(b'K\n') # Send all clear to receive more data
+    #     return
 
     # Loads data from a file and plots it on the interface
-    # def plotData(self, readDataFilePath):
+    def plotData(self, readDataFilePath):
         
-    #     xdata = []
-    #     ydata = []
-    #     self.plot1.clear()
-    #     with open(readDataFilePath, newline='') as read_file:
-    #         csv_reader = csv.DictReader(read_file, quoting=csv.QUOTE_NONNUMERIC, delimiter=',', quotechar='|')
-    #         for row in csv_reader:
-    #            xdata.append(row['Time'])
-    #            ydata.append(row['C'])
-    #     self.plot1.plot(xdata, ydata, marker = 'o', fillstyle = 'full')
-    #     self.plot1.set_xlim(-1, np.max(xdata)+1)
-    #     self.plot1.set_ylim(np.min(ydata)*0.9 - 1, np.max(ydata)*1.3 + 1)
-    #     self.canvas.draw()
-    #     return
+        timeData = []
+        cData = []
+        self.plot1.clear()
+        with open(readDataFilePath, newline='') as read_file:
+            csv_reader = csv.DictReader(read_file, quoting=csv.QUOTE_NONNUMERIC, delimiter=',', quotechar='|')
+            for row in csv_reader:
+                timeData.append(row['Time'])
+                cData.append([row['C1'], row['C2'], row['C3'], row['C4']])
+
+        cData = np.array(cData)
+        for i in range(4):
+            self.plot1.plot(timeData, cData[:,i], marker = 'o', markersize = 4, label = f"Ch {i+1}", fillstyle = 'full')
+
+        self.plot1.set_xlim(-1, np.max(timeData)+1)
+        self.plot1.set_ylim(np.min(cData)*0.9 - 1, np.max(cData)*1.1 + 1)
+        self.plot1.set_xlabel("Time (s)")
+        self.plot1.set_ylabel("Capacitance (pF)")
+        self.plot1.legend(loc='upper left', prop={'size':6})
+        self.canvas.draw()
+
+        # Calculate Parameters
+        self.caclulateParameters(cData, [0, 1, 2, 3])
+
+        # Enable only for pictures
+        pictures = True
+        if pictures:
+            self.str_heaterStatus.set(self.heaterStatus[2])
+            self.str_currentTemp.set("37.0")
+            self.heatBtn_text.set(self.heatBtnText[1])
+            self.btn_text.set(self.measBtnText[1])
+
+        return
 
     def cancelMeasurement(self):
         try: 
