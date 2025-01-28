@@ -772,11 +772,12 @@ class GenII_Interface:
     #        csv_writer.writerow([float(line)])
 
     def printAndStore(self, dataVec):
+
         start_time = time.perf_counter()
+
         # Get current count
         i = self.countData[-1]
         
-
         # Process Data Vector
         CVec = []
         GVec = []
@@ -800,10 +801,9 @@ class GenII_Interface:
             l.set_xdata(self.countData)
             l.set_ydata(self.DataMat[0:i, chan])
 
-        #smallMat = self.DataMat[~np.isnan(self.DataMat)]
         try:
             self.DataMat[i-1, -1] = self.str_currentTemp.get()
-        except ValueError as e:
+        except Exception as e:
             print(e)
 
         smallMat = self.DataMat[i-1]
@@ -816,18 +816,14 @@ class GenII_Interface:
 
         if self.csv_writer:
             self.csv_writer.writerow(np.concatenate(([i], smallMat)))
-            #print(printString + '\n')
 
-        if self.redrawCounter > -1:
-            self.plot1.set_xlim(-1, np.floor((i-1)/30 + 1) * 30)
-            self.plot1.set_ylim(self.plotRange[0]-1, self.plotRange[1]+1)
-            #self.plot1.set_ylim(0, 400)
-            self.canvas.draw()
-            self.redrawCounter = -1
+        self.plot1.set_xlim(-1, np.floor((i-1)/30 + 1) * 30)
+        self.plot1.set_ylim(self.plotRange[0]-1, self.plotRange[1]+1)
+        #self.plot1.set_ylim(0, 400)
+        self.canvas.draw()
 
-        self.redrawCounter+=1
         time_elapsed = time.perf_counter() - start_time
-        print(time_elapsed)
+        print(f"time_elapsed: {time_elapsed:0.3f}")
 
 
     def finishTest(self):
