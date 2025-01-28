@@ -772,7 +772,7 @@ class GenII_Interface:
     #        csv_writer.writerow([float(line)])
 
     def printAndStore(self, dataVec):
-
+        start_time = time.perf_counter()
         # Get current count
         i = self.countData[-1]
         
@@ -807,8 +807,8 @@ class GenII_Interface:
             print(e)
 
         smallMat = self.DataMat[i-1]
-        smallMatMin= np.max(smallMat[self.channelList])
-        smallMatMax= np.min(smallMat[self.channelList])
+        smallMatMin= np.min(smallMat[self.channelList])
+        smallMatMax= np.max(smallMat[self.channelList])
         if smallMatMin < self.plotRange[0]:
             self.plotRange[0] = smallMatMin
         if smallMatMax > self.plotRange[1]:
@@ -826,6 +826,8 @@ class GenII_Interface:
             self.redrawCounter = -1
 
         self.redrawCounter+=1
+        time_elapsed = time.perf_counter() - start_time
+        print(time_elapsed)
 
 
     def finishTest(self):
