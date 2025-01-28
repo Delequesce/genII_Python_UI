@@ -818,7 +818,7 @@ class GenII_Interface:
             self.csv_writer.writerow(np.concatenate(([i], smallMat)))
             #print(printString + '\n')
 
-        if self.redrawCounter > 1:
+        if self.redrawCounter > -1:
             self.plot1.set_xlim(-1, np.floor((i-1)/30 + 1) * 30)
             self.plot1.set_ylim(self.plotRange[0]-1, self.plotRange[1]+1)
             #self.plot1.set_ylim(0, 400)
