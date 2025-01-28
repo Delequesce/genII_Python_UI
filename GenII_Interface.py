@@ -807,11 +807,12 @@ class GenII_Interface:
             print(e)
 
         smallMat = self.DataMat[i-1]
-        smallMat_channels = smallMat[self.channelList]
-        if smallMat_channels < self.plotRange[0]:
-            self.plotRange[0] = np.min(smallMat_channels)
-        if smallMat_channels > self.plotRange[1]:
-            self.plotRange[1] = np.max(smallMat_channels)
+        smallMatMin= np.max(smallMat[self.channelList])
+        smallMatMax= np.min(smallMat[self.channelList])
+        if smallMatMin < self.plotRange[0]:
+            self.plotRange[0] = smallMatMin
+        if smallMatMax > self.plotRange[1]:
+            self.plotRange[1] = smallMatMax
 
         if self.csv_writer:
             self.csv_writer.writerow(np.concatenate(([i], smallMat)))
