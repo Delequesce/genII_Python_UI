@@ -61,6 +61,7 @@ class GenII_Interface:
         self.exit_code = bytearray([0, 1, 2, 3])
         self.countData = []
         self.channelList = []
+        self.redrawCounter = 0
         self.channelBin = 0
         self.DataMat = []
         self.oldDataVec = [0, 0, 0, 0, 0, 0, 0, 0]
@@ -382,8 +383,8 @@ class GenII_Interface:
             else:
                 raise EnvironmentError('Unsupported platform')
         else:
-            #genII_port = "/dev/ttyS0"
-            genII_port = "/dev/ttyACM0"
+            genII_port = "/dev/ttyS0"
+            #genII_port = "/dev/ttyACM0"
         
         #port = input("Enter the requested port number to connect")
         SerialObj = serial.Serial(baudrate = 115200, timeout = 5) # Port is immediately opened upon creation.         
@@ -532,17 +533,19 @@ class GenII_Interface:
             count = 0
             while count < N_Count:
                 try: 
+                    print("Attempting to Write Command")
                     self.SerialObj.write(writeData)
                 except: 
                     print("Write Error to COM Port")
                 
+                print("Waiting for Ack")
                 acked = (self.SerialObj.read(1) == b'K')
                 if acked:
+                    print("Command Acknowledged")
                     self.dontInterrupt = False
                     return 1
 
                 count+=1
-
             attemptCounter+=1
 
         self.dontInterrupt = False
@@ -622,10 +625,10 @@ class GenII_Interface:
                 self.str_currentTemp.set(line[0:-4]) #Increase number to reduce how many decimals are printed
                 
                 # Create moving average to see when temperature becomes stable (if last X measurements were within Y degrees of each other)
-                if self.isHeating and len(self.tempArray.data) == self.TEMPARRAYSIZE:
-                    self.tempArray.add(float(line[0:-4]))
-                    if np.std(self.tempArray.data) < self.tempStabilityThreshold:
-                        self.str_heaterStatus.set(self.heaterStatus[2])
+                #if self.isHeating and len(self.tempArray.data) == self.TEMPARRAYSIZE:
+                #    self.tempArray.add(float(line[0:-4]))
+                #    if np.std(self.tempArray.data) < self.tempStabilityThreshold:
+                #        self.str_heaterStatus.set(self.heaterStatus[2])
 
             # elif controlChar == b'F': # Free Data. F character tells UI to expect 512 data points 
             #     try:
@@ -652,7 +655,7 @@ class GenII_Interface:
         invalid = 0
         self.filePath = self.str_filePath.get()
         #freeRun = self.freeRunVar.get()
-        self.plotRange = np.array([0, 200])
+        self.plotRange = np.array([90, 110])
 
         # Cancel Any previously ongoing test on MCU End
         try: 
@@ -738,6 +741,7 @@ class GenII_Interface:
         self.DataMat[:] = np.nan
 
         self.countData = []
+        self.redrawCounter = 0
         # Initialize plot
         self.plot1.cla()
         for i in range(4):
@@ -771,6 +775,7 @@ class GenII_Interface:
 
         # Get current count
         i = self.countData[-1]
+        
 
         # Process Data Vector
         CVec = []
@@ -802,19 +807,24 @@ class GenII_Interface:
             print(e)
 
         smallMat = self.DataMat[i-1]
-        self.plotRange[0] = np.min(np.append(smallMat[self.channelList], self.plotRange[0]))
-        self.plotRange[1] = np.max(np.append(smallMat[self.channelList], self.plotRange[1]))
-
-        #print(self.plotRange)
-
-        self.plot1.set_xlim(-1, np.floor((i-1)/30 + 1) * 30)
-        self.plot1.set_ylim(self.plotRange[0]-1, self.plotRange[1]+1)
-        #self.plot1.set_ylim(0, 400)
-        self.canvas.draw()
+        smallMat_channels = smallMat[self.channelList]
+        if smallMat_channels < self.plotRange[0]:
+            self.plotRange[0] = np.min(smallMat_channels)
+        if smallMat_channels > self.plotRange[1]:
+            self.plotRange[1] = np.max(smallMat_channels)
 
         if self.csv_writer:
             self.csv_writer.writerow(np.concatenate(([i], smallMat)))
             #print(printString + '\n')
+
+        if self.redrawCounter > 1:
+            self.plot1.set_xlim(-1, np.floor((i-1)/30 + 1) * 30)
+            self.plot1.set_ylim(self.plotRange[0]-1, self.plotRange[1]+1)
+            #self.plot1.set_ylim(0, 400)
+            self.canvas.draw()
+            self.redrawCounter = -1
+
+        self.redrawCounter+=1
 
 
     def finishTest(self):
@@ -847,7 +857,7 @@ class GenII_Interface:
         self.isMeasuring = 0
         return
 
-    def caclulateParameters(self, DataMat, channelList):
+    def calculateParameters(self, DataMat, channelList):
         simpleMax = False
         N, M = DataMat.shape
         Tpeak = np.zeros(M)
@@ -863,70 +873,75 @@ class GenII_Interface:
         N_C_ma = 12
         cnv_window_c = np.ones(N_C_ma)
         cnv_window_slp = np.ones(N_slp_ma)
-        for chan in channelList:
-            Cdata = DataMat[:,chan]
-            Cdata_filt = np.convolve(Cdata, cnv_window_c, 'valid')/N_C_ma
-            Cdata_filt = np.concatenate((Cdata[:(N_C_ma-1)], Cdata_filt))
-            C_slp = np.diff(Cdata_filt)
-            C_slp_filt = np.convolve(C_slp, cnv_window_slp, 'valid')/N_slp_ma
-            C_slp_filt = np.concatenate((C_slp[:(N_slp_ma-1)], C_slp_filt))
-            if simpleMax: # Maximum Value
-                TpeakI = np.argmax(Cdata)
-                Tpeak[chan] = Cdata[TpeakI]
-            else: # Zero Crossing
-                j = 0
-                changeArray = C_slp_filt < 0
-                tempArr = np.where(changeArray[startJ:N-1])[0]
-                tempArr = tempArr[:5] + startJ
-                #print(tempArr)
-                if len(tempArr) < 2:
-                    continue
-                while tempArr[j+1] > tempArr[j]:
-                    j+=1
-                    if j == 4:
-                        mFlag = 1
-                        break
-
-                if mFlag:
-                    TpeakI = round(np.median(tempArr))
-                else:
-                    TpeakI = tempArr[j]
-
-                Tpeak[chan] = TpeakI
-
-            # Normalize Data
-            maxPf = Cdata[TpeakI]
-            normC[:,chan] = np.divide(Cdata,maxPf)
-            normSlp[:,chan] = np.divide(C_slp, maxPf)
-
-            # Delta Epsilon
-            # Stop condition is Slope < 0.00002
-            # Once normC has fallen by 1% from peak (0.01)
-            deltaEpsI = np.nan
-            if simpleMax:
-                DeltaEps[chan] = np.min(Cdata[TpeakI:])
-            else:
-                slope_thresh = -0.00002
-                fall_thresh = 0.99
-                if TpeakI != N:
-                    for n, val in enumerate(normSlp[TpeakI:, chan]):
-                        if normC[n + TpeakI, chan] > fall_thresh:
-                            continue
-
-                        if val > slope_thresh:
-                            deltaEpsI = TpeakI + n
-                            DeltaEps[chan] = np.round(1-normC[deltaEpsI, chan], 4)
+        try:
+            for chan in channelList:
+                Cdata = DataMat[:,chan]
+                Cdata_filt = np.convolve(Cdata, cnv_window_c, 'valid')/N_C_ma
+                Cdata_filt = np.concatenate((Cdata[:(N_C_ma-1)], Cdata_filt))
+                C_slp = np.diff(Cdata_filt)
+                C_slp_filt = np.convolve(C_slp, cnv_window_slp, 'valid')/N_slp_ma
+                C_slp_filt = np.concatenate((C_slp[:(N_slp_ma-1)], C_slp_filt))
+                if simpleMax: # Maximum Value
+                    TpeakI = np.argmax(Cdata)
+                    Tpeak[chan] = Cdata[TpeakI]
+                else: # Zero Crossing
+                    j = 0
+                    changeArray = C_slp_filt < 0
+                    tempArr = np.where(changeArray[startJ:N-1])[0]
+                    tempArr = tempArr[:5] + startJ
+                    #print(tempArr)
+                    if len(tempArr) < 2:
+                        continue
+                    while tempArr[j+1] > tempArr[j]:
+                        j+=1
+                        if j == 4:
+                            mFlag = 1
                             break
-            
-            # Find Smax
-            endCheck = N if np.isnan(deltaEpsI) else deltaEpsI + 1
-            smaxI = TpeakI + np.argmin(normC[TpeakI:endCheck, chan])
-            smax[chan] = np.abs(np.round(normC[smaxI, chan], 4))
 
-            # Store values
-            self.str_tpeak_est[chan].set(Tpeak[chan])
-            self.str_deltaEps_est[chan].set(DeltaEps[chan])
-            self.str_smax_est[chan].set(smax[chan])
+                    if mFlag:
+                        TpeakI = round(np.median(tempArr))
+                    else:
+                        TpeakI = tempArr[j]
+
+                    Tpeak[chan] = TpeakI
+
+                # Normalize Data
+                maxPf = Cdata[TpeakI]
+                normC[:,chan] = np.divide(Cdata,maxPf)
+                normSlp[:,chan] = np.divide(C_slp, maxPf)
+
+                # Delta Epsilon
+                # Stop condition is Slope < 0.00002
+                # Once normC has fallen by 1% from peak (0.01)
+                deltaEpsI = np.nan
+                if simpleMax:
+                    DeltaEps[chan] = np.min(Cdata[TpeakI:])
+                else:
+                    slope_thresh = -0.00002
+                    fall_thresh = 0.99
+                    if TpeakI != N:
+                        for n, val in enumerate(normSlp[TpeakI:, chan]):
+                            if normC[n + TpeakI, chan] > fall_thresh:
+                                continue
+
+                            if val > slope_thresh:
+                                deltaEpsI = TpeakI + n
+                                DeltaEps[chan] = np.round(1-normC[deltaEpsI, chan], 4)
+                                break
+                
+                # Find Smax
+                endCheck = N if np.isnan(deltaEpsI) else deltaEpsI + 1
+                smaxI = TpeakI + np.argmin(normC[TpeakI:endCheck, chan])
+                smax[chan] = np.abs(np.round(normC[smaxI, chan], 4))
+
+                # Store values
+                self.str_tpeak_est[chan].set(Tpeak[chan])
+                self.str_deltaEps_est[chan].set(DeltaEps[chan])
+                self.str_smax_est[chan].set(smax[chan])
+
+        except Exception as e:
+            print(e)
+            print("Error in calculating parameters")
 
 
 
@@ -965,10 +980,10 @@ class GenII_Interface:
         self.canvas.draw()
 
         # Calculate Parameters
-        self.caclulateParameters(cData, [0, 1, 2, 3])
+        self.calculateParameters(cData, [0, 1, 2, 3])
 
         # Enable only for pictures
-        pictures = True
+        pictures = False
         if pictures:
             self.str_heaterStatus.set(self.heaterStatus[2])
             self.str_currentTemp.set("37.0")
