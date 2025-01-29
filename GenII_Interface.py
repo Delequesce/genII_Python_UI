@@ -653,6 +653,33 @@ class GenII_Interface:
 
     # Command board to begin taking measurements and sending data    
     def beginMeasurement(self):
+
+        isTestingUI = False
+        if isTestingUI:
+            # Initialize plot
+            self.plot1.cla()
+            for i in range(1):
+                self.plot1.plot([], [], 'o-', label = f"Ch {i+1}", markersize=4, animated=True)
+
+            self.lines = self.plot1.get_lines()
+            self.plot1.set_xlabel("Time (s)")
+            self.plot1.set_ylabel("Capacitance (pF)")
+            self.plot1.legend(loc='upper left', prop={'size':6})
+            self.plot1.set_xlim(0, 100)
+            self.plot1.set_ylim(0, 100)
+
+            # Create Blitting Manager to handle canvas and line updates and redraws
+            self.bm = BlitManager(self.canvas, self.lines)
+
+            # Run loop to plot data
+            xData = np.arange(0, 100)
+            for j in range(100):
+                self.lines[0].set_xdata(xData[0:j])
+                self.lines[0].set_ydata(xData[0:j])
+                self.bm.update()
+            return
+
+
         invalid = 0
         self.filePath = self.str_filePath.get()
         #freeRun = self.freeRunVar.get()
@@ -812,6 +839,8 @@ class GenII_Interface:
             print(e)
 
         smallMat = self.DataMat[i-1]
+        if smallMat.size == 0:
+            return
         smallMatMin= np.min(smallMat[self.channelList])
         smallMatMax= np.max(smallMat[self.channelList])
         if smallMatMin < self.plotRange[0]:

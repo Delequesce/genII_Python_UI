@@ -16,7 +16,7 @@ class BlitManager:
         self._artists = []
 
         for a in animated_artists:
-            self.add_artists(a)
+            self.add_artist(a)
         # grab the background on every draw 
         self.cid = canvas.mpl_connect("draw_event", self.on_draw)
 
