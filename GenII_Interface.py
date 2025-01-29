@@ -1,5 +1,6 @@
 from matplotlib.figure import Figure
 from RingBuffer import *
+from BlitManager import *
 import tkinter as tk
 import tkinter.ttk as ttk
 import numpy as np
@@ -742,10 +743,11 @@ class GenII_Interface:
 
         self.countData = []
         self.redrawCounter = 0
+
         # Initialize plot
         self.plot1.cla()
         for i in range(4):
-            self.plot1.plot([], [], 'o-', label = f"Ch {i+1}", markersize=4)
+            self.plot1.plot([], [], 'o-', label = f"Ch {i+1}", markersize=4, animated=True)
 
         self.lines = self.plot1.get_lines()
         self.plot1.set_xlabel("Time (s)")
@@ -753,6 +755,9 @@ class GenII_Interface:
         self.plot1.legend(loc='upper left', prop={'size':6})
         self.plot1.set_xlim(-1, 30)
 
+        # Create Blitting Manager to handle canvas and line updates and redraws
+        self.bm = BlitManager(self.canvas, self.lines)
+        
         i = 0
         self.channelBin = 0
         for var in self.channelVars:
@@ -820,7 +825,14 @@ class GenII_Interface:
         self.plot1.set_xlim(-1, np.floor((i-1)/30 + 1) * 30)
         self.plot1.set_ylim(self.plotRange[0]-1, self.plotRange[1]+1)
         #self.plot1.set_ylim(0, 400)
-        self.canvas.draw()
+
+        # Have the blitting manager update the artists
+        if self.redrawCounter > 9:
+            self.canvas.draw()
+            self.redrawCounter = 0
+        else:
+            self.bm.update()
+            self.redrawCounter+=1
 
         time_elapsed = time.perf_counter() - start_time
         print(f"time_elapsed: {time_elapsed:0.3f}")
