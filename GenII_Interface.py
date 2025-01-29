@@ -902,6 +902,10 @@ class GenII_Interface:
 
         self.btn_text.set("Begin Measurement")
         self.isMeasuring = 0
+
+        # Pop up window to indicate test finish
+        tk.messagebox.askokcancel("Test Finished", "Test Finished!")
+
         return
 
     def calculateParameters(self, DataMat, channelList):
