@@ -62,9 +62,10 @@ class GenII_Interface:
         self.exit_code = bytearray([0, 1, 2, 3])
         self.countData = []
         self.channelList = []
-        self.redrawCounter = 0
+        self.redrawCounter = 10
         self.channelBin = 0
         self.DataMat = []
+        self.prevTime = 0
         self.oldDataVec = [0, 0, 0, 0, 0, 0, 0, 0]
         self.output_file = None
         self.csv_writer = None
@@ -793,6 +794,9 @@ class GenII_Interface:
                 self.channelBin = self.channelBin + (1 << i)
             i+=1
 
+        # Set Start Time
+        self.prevTime = time.perf_counter()
+
         # After function exits, input processing thread will continue to run and handle incoming data
         #self.io_task = tk.after(100, self.processInputs) # Schedule new read in 500 msec
         return
@@ -805,7 +809,10 @@ class GenII_Interface:
 
     def printAndStore(self, dataVec):
 
-        start_time = time.perf_counter()
+        # Use to calculate time in between each collection
+        currTime = time.perf_counter()
+        print(currTime - self.prevTime)
+        self.prevTime = currTime
 
         # Get current count
         i = self.countData[-1]
@@ -863,8 +870,8 @@ class GenII_Interface:
             self.bm.update()
             self.redrawCounter+=1
 
-        time_elapsed = time.perf_counter() - start_time
-        print(f"time_elapsed: {time_elapsed:0.3f}")
+        #time_elapsed = time.perf_counter() - start_time
+        #print(f"time_elapsed: {time_elapsed:0.3f}")
 
 
     def finishTest(self):
