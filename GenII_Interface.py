@@ -385,8 +385,8 @@ class GenII_Interface:
             else:
                 raise EnvironmentError('Unsupported platform')
         else:
-            genII_port = "/dev/ttyS0"
-            #genII_port = "/dev/ttyACM0"
+            #genII_port = "/dev/ttyS0"
+            genII_port = "/dev/ttyACM0"
         
         #port = input("Enter the requested port number to connect")
         SerialObj = serial.Serial(baudrate = 115200, timeout = 5) # Port is immediately opened upon creation.         
@@ -560,7 +560,7 @@ class GenII_Interface:
         if self.dontInterrupt:
             self.io_task = self.root.after(IOSLEEPTIME, self.processInputs)
             return
-        start_time = time.perf_counter()
+        #start_time = time.perf_counter()
         self.SerialObj.timeout = 0.5
         for i in range(self.SerialObj.in_waiting):
             # Read a single character from buffer
@@ -770,7 +770,7 @@ class GenII_Interface:
         self.DataMat[:] = np.nan
 
         self.countData = []
-        self.redrawCounter = 0
+        self.redrawCounter = 10
 
         # Initialize plot
         self.plot1.cla()
@@ -795,7 +795,7 @@ class GenII_Interface:
             i+=1
 
         # Set Start Time
-        self.prevTime = time.perf_counter()
+        #self.prevTime = time.perf_counter()
 
         # After function exits, input processing thread will continue to run and handle incoming data
         #self.io_task = tk.after(100, self.processInputs) # Schedule new read in 500 msec
@@ -810,9 +810,9 @@ class GenII_Interface:
     def printAndStore(self, dataVec):
 
         # Use to calculate time in between each collection
-        currTime = time.perf_counter()
-        print(currTime - self.prevTime)
-        self.prevTime = currTime
+        #currTime = time.perf_counter()
+        #print(currTime - self.prevTime)
+        #self.prevTime = currTime
 
         # Get current count
         i = self.countData[-1]
@@ -897,8 +897,8 @@ class GenII_Interface:
             print("Conductance: %0.4f +- %0.4f mS" % (DataMean[chan+4], DataStd[chan+4]))
         
         # Calculate Output Parameters, if necessary
-        if self.isMeasuring:
-            self.calculateParameters(self.DataMat, self.channelList)
+        #if self.isMeasuring:
+        #    self.calculateParameters(self.DataMat, self.channelList)
 
         self.btn_text.set("Begin Measurement")
         self.isMeasuring = 0
