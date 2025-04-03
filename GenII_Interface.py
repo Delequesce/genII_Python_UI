@@ -71,6 +71,7 @@ class GenII_Interface:
         self.csv_writer = None
         self.tempArray = RingBuffer(self.TEMPARRAYSIZE)
         self.tempStabilityThreshold = 0.5
+        self.bsWindow = None
         
         # Initialize first frame
         self.forward()
@@ -427,6 +428,8 @@ class GenII_Interface:
 
     def performCalibration(self, boardNumber):
 
+        self.bsWindow.destroy()
+
         sendData = bytearray('B' + str(boardNumber) + '\n', 'ascii')
 
         if not self.deviceAck(10, 5, sendData):
@@ -477,9 +480,13 @@ class GenII_Interface:
         
         btn_run.grid(row=3, column=0, columnspan=N_Boards, pady=2)
 
+        self.bsWindow = bsWindow
+
         return
 
     def performEQC(self, boardNumber):
+
+        self.bsWindow.destroy()
         sendData = bytearray('Q' + str(boardNumber) + '\n', 'ascii')
 
         # print(sendData)
