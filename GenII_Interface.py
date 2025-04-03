@@ -98,8 +98,8 @@ class GenII_Interface:
         
         # Buttons
         btn_connect = ttk.Button(fr_main, text = "Connect to Device", style = "AccentButton", command = self.connectToDevice)
-        btn_EQC = ttk.Button(fr_main, text = "Perform Daily EQC", style = "AccentButton", command = self.performEQC)
-        btn_calib = ttk.Button(fr_main, text = "Perform Calibration", style = "AccentButton", command = self.performCalibration)
+        btn_EQC = ttk.Button(fr_main, text = "Perform Daily EQC", style = "AccentButton", command = lambda: self.openBoardSelectWindow(True))
+        btn_calib = ttk.Button(fr_main, text = "Perform Calibration", style = "AccentButton", command = lambda: self.openBoardSelectWindow(False))
         btn_newTest = ttk.Button(fr_main, text = "Setup New Test", style = "AccentButton", command = self.forward)
         btn_connect.grid(row = 0, column = 0, pady = 5)
         btn_EQC.grid(row = 1, column = 0, pady = 5)
@@ -174,11 +174,6 @@ class GenII_Interface:
         btn_next.grid(row = 0, column = 2, pady = 5)
         btn_back.grid(row = 1, column = 2, pady = 5)
         btn_fileEdit.grid(row = 0, column = 0) # Should be just to the left of the filepath text box
-
-        # Free run checkbox
-        #self.freeRunVar = tk.IntVar(value = 0)
-        #ttk.Checkbutton(fr_params, text = "Free Run",variable=self.freeRunVar, onvalue=1, offvalue=0).grid(row = 2, column = 2)
-
 
         self.channelVars = []
         for i in range(4):
@@ -385,8 +380,9 @@ class GenII_Interface:
             else:
                 raise EnvironmentError('Unsupported platform')
         else:
+            genII_port = "/dev/serial0"
             #genII_port = "/dev/ttyS0"
-            genII_port = "/dev/ttyACM0"
+            #genII_port = "/dev/ttyACM0"
         
         #port = input("Enter the requested port number to connect")
         SerialObj = serial.Serial(baudrate = 115200, timeout = 5) # Port is immediately opened upon creation.         
@@ -429,14 +425,16 @@ class GenII_Interface:
         self.processInputs()
     
 
-    def performCalibration(self):
-        try: 
-            self.SerialObj.write(b'B\n')
-        except: 
-            self.calibStatus.set("Failed to Write to COM Port")
-            return
+    def performCalibration(self, boardNumber):
+
+        sendData = bytearray('B' + str(boardNumber) + '\n', 'ascii')
+
+        if not self.deviceAck(10, 5, sendData):
+            self.calibStatus.set("Failed to Start Calibration")
+            return 
         
         self.calibStatus.set("Waiting for Calibration to complete")
+        return
 
     def finishCalibration(self, dataVec):
 
@@ -454,13 +452,42 @@ class GenII_Interface:
         self.calibStatus.set("Calibration Successful")
         return
 
+    # Opens a window for selecting the appropriate board. 
+    def openBoardSelectWindow(self, isQC):
+        bsWindow = tk.Toplevel(self.root)
+        bsWindow.title('Board Selection Window')
 
-    def performEQC(self):
-        try: 
-           self.SerialObj.write(b'Q\n')
-        except: 
-           self.eqcStatus.set("Failed to Write to COM Port")
-           return
+        lbl_boardNumber = ttk.Label(bsWindow, text= "Board Number")
+        bn_radial = tk.IntVar()
+        if isQC:
+            btn_run = ttk.Button(bsWindow, text = "Begin Quality Check", style="AccentButton", 
+                                 command = lambda: self.performEQC(bn_radial.get()))
+            lbl_helpText = ttk.Label(bsWindow, text = "Please insert a QC Board and select the correct ID")
+            N_Boards = 5
+        else: 
+            btn_run = ttk.Button(bsWindow, text = "Begin Calibration", style="AccentButton", 
+                                 command = lambda: self.performCalibration(bn_radial.get()))
+            lbl_helpText = ttk.Label(bsWindow, text = "Please insert a Calibration Board and select the correct ID")
+            N_Boards = 5
+
+        lbl_helpText.grid(row=0, column=0, columnspan=N_Boards, pady=2)
+        lbl_boardNumber.grid(row=1, column=0, columnspan=N_Boards, pady=2)
+        for i in range(N_Boards):
+            ttk.Radiobutton(bsWindow, text = f'{i}', variable=bn_radial, value = i).grid(row=2, column=i)
+        
+        btn_run.grid(row=3, column=0, columnspan=N_Boards, pady=2)
+
+        return
+
+    def performEQC(self, boardNumber):
+        sendData = bytearray('Q' + str(boardNumber) + '\n', 'ascii')
+
+        # print(sendData)
+
+        if not self.deviceAck(10, 5, sendData):
+            self.calibStatus.set("Failed to Start Calibration")
+            return 
+
         self.cv_statusLights.itemconfig(self.light_EQC, fill="yellow")
         self.eqcStatus.set("EQC Running:")
         print("Starting Countdown")
@@ -614,6 +641,22 @@ class GenII_Interface:
                     #print(dataVec)
                 else:
                     self.finishEQC(dataVec)
+            elif controlChar == b'O':
+                line = self.SerialObj.readline()
+                try: 
+                    decoded_line = line.decode(encoding='ascii')
+                except Exception as e:
+                    print(e)
+                    print(line)
+                    self.io_task = self.root.after(ERR_IOSLEEPTIME, self.processInputs)
+                    return
+                
+                outputVec = decoded_line[0:-1].split('!');
+                if len(outputVec < 5):
+                    print(decoded_line)
+                else:
+                    self.setOutputParams(outputVec)
+
             elif controlChar == b'T': # Temperature Reading
                 try:
                     line = self.SerialObj.readline().decode(encoding='ascii')
@@ -632,17 +675,6 @@ class GenII_Interface:
                 #    if np.std(self.tempArray.data) < self.tempStabilityThreshold:
                 #        self.str_heaterStatus.set(self.heaterStatus[2])
 
-            # elif controlChar == b'F': # Free Data. F character tells UI to expect 512 data points 
-            #     try:
-            #         self.SerialObj.timeout = 2
-            #         line = self.SerialObj.readline()
-            #         decoded_line = line.decode(encoding='utf-8')
-            #         dataVec = decoded_line[0:-1].split('!')
-            #         if not self.output_file.closed:
-            #             self.processFreeData(dataVec)
-            #     except Exception as e:
-            #         print(e)
-            #         self.io_task = self.root.after(ERR_IOSLEEPTIME, self.processInputs) # Schedule new read in 500 msec
             else:
                 continue
 
@@ -683,7 +715,6 @@ class GenII_Interface:
 
         invalid = 0
         self.filePath = self.str_filePath.get()
-        #freeRun = self.freeRunVar.get()
         self.plotRange = np.array([90, 110])
 
         # Cancel Any previously ongoing test on MCU End
@@ -697,25 +728,12 @@ class GenII_Interface:
         if self.filePath:
             with open(self.filePath, 'w', newline = '') as output_file:
                 csv_writer = csv.writer(output_file, delimiter = ',', quoting = csv.QUOTE_NONNUMERIC, quotechar='|')
-                # if freeRun:
-                #     csv_writer.writerow(['Ve', 'Vr'])
-                #else:
                 csv_writer.writerow(['Time', 'C1', 'C2', 'C3','C4','G1','G2','G3', 'G4', 'Temp'])
             # Reopen file in append mode to continuously write data
             self.output_file = open(self.filePath, 'a', newline = '')
             self.csv_writer = csv.writer(self.output_file, delimiter = ',', quoting=csv.QUOTE_NONNUMERIC)
 
-        # if freeRun:
-        #     try: 
-        #         self.SerialObj.timeout = 1
-        #         self.SerialObj.write(b'F\n') # Free run
-        #         print("Starting Free Run")
-        #     except: 
-        #         self.eqcStatus.set("Failed to Start test to COM Port")
-        #     return
-
         # Send command to device to start measurement. Cancel reads during this process
-        #tk.after_cancel(self.io_task)
         runT = self.str_runT.get()
         intrunT = int(runT)
         N_bytes_1 = len(runT)
@@ -990,18 +1008,13 @@ class GenII_Interface:
             print(e)
             print("Error in calculating parameters")
 
-
-
-    # def processFreeData(self, dataVec):
-        
-    #     print("Writing %d datapoints" % len(dataVec))
-        
-    #     for i in range(0, 64, 2):
-    #         self.csv_writer.writerow([dataVec[i], dataVec[i+1]])
-        
-    #     #print("All Clear Sent")
-    #     self.SerialObj.write(b'K\n') # Send all clear to receive more data
-    #     return
+    # Sets the parameter estimate values upon transfer from MCU
+    def setOutputParams(self, outputVec):
+        chan = 0
+        self.str_tpeak_est[chan].set(outputVec[0])
+        self.str_deltaEps_est[chan].set(outputVec[1])
+        self.str_smax_est[chan].set(outputVec[4])
+        return
 
     # Loads data from a file and plots it on the interface
     def plotData(self, readDataFilePath):
@@ -1092,4 +1105,4 @@ if __name__ == "__main__":
     ERR_IOSLEEPTIME = 200
     app = GenII_Interface(root) # Create Main Application Object
     root.protocol("WM_DELETE_WINDOW", app.on_close)
-    root.mainloop();
+    root.mainloop()
