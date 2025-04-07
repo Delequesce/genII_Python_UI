@@ -193,7 +193,7 @@ class GenII_Interface:
         # Button Text Arrays
         self.heatBtnText = ["Start Heating", "Stop Heating"]
         self.measBtnText = ["Begin Measurement", "Stop Measurement"]
-        self.heaterStatus = ["Heater Off", "Heating System", "Stable Temperature Achieved"]
+        self.heaterStatus = ["Heater Off", "Heating System", "Stable Temperature Achieved", "Heater Start Error", "Heater Stop Error"]
 
         # Components
         self.heatBtn_text = tk.StringVar(value = self.heatBtnText[0])
@@ -541,22 +541,27 @@ class GenII_Interface:
     
     def startHeating(self):
 
-        # Toggle Heater State and wait for response
-        if not self.deviceAck(10, 1, b'H\n'):
-            self.str_heaterStatus.set("Heater Error")
-            return
-        
         # Status is Idle -> Heating -> Stable
         stat = self.str_heaterStatus.get()
-        if stat == self.heaterStatus[0]: #Idle, Start Heating
+
+        if stat == self.heaterStatus[0] or stat == self.heaterStatus[3]: #Idle, Start Heating
+            # Toggle Heater State and wait for response
+            if not self.deviceAck(10, 2, b'H\n'):
+                self.str_heaterStatus.set(self.heaterStatus[3]) # Heater Start Error
+                return
+
             self.str_heaterStatus.set(self.heaterStatus[1])
             self.heatBtn_text.set(self.heatBtnText[1])
         else: # Stop Heating
+            # Toggle Heater State and wait for response
+            if not self.deviceAck(10, 2, b'H\n'):
+                self.str_heaterStatus.set(self.heaterStatus[4]) # Heater Stop Error
+                return
+            
             self.str_heaterStatus.set(self.heaterStatus[0])
             self.heatBtn_text.set(self.heatBtnText[0])
             self.tempArray = RingBuffer(self.TEMPARRAYSIZE) # Re-initialize temperature array as empty Ring Buffer
         
-        self.dontInterrupt = False
         return
 
     # Function that checks for 'K' response from MCU for a variety of reasons
