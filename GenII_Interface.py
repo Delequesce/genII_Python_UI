@@ -572,14 +572,16 @@ class GenII_Interface:
         attemptCounter = 0
         while attemptCounter < N_Attempt:
             count = 0
+            try: 
+                print("Attempting to Write Command")
+                self.SerialObj.write(writeData)
+            except: 
+                print("Write Error to COM Port")
+
+            time.sleep(0.5)
+
+            print("Waiting for Ack")
             while count < N_Count:
-                try: 
-                    print("Attempting to Write Command")
-                    self.SerialObj.write(writeData)
-                except: 
-                    print("Write Error to COM Port")
-                
-                print("Waiting for Ack")
                 acked = (self.SerialObj.read(1) == b'K')
                 if acked:
                     print("Command Acknowledged")
