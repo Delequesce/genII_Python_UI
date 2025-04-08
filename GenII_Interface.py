@@ -546,7 +546,7 @@ class GenII_Interface:
 
         if stat == self.heaterStatus[0] or stat == self.heaterStatus[3]: #Idle, Start Heating
             # Toggle Heater State and wait for response
-            if not self.deviceAck(10, 2, b'H\n'):
+            if not self.deviceAck(10, 1, b'H\n'):
                 self.str_heaterStatus.set(self.heaterStatus[3]) # Heater Start Error
                 return
 
@@ -554,7 +554,7 @@ class GenII_Interface:
             self.heatBtn_text.set(self.heatBtnText[1])
         else: # Stop Heating
             # Toggle Heater State and wait for response
-            if not self.deviceAck(10, 2, b'H\n'):
+            if not self.deviceAck(10, 1, b'H\n'):
                 self.str_heaterStatus.set(self.heaterStatus[4]) # Heater Stop Error
                 return
             
