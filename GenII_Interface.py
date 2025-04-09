@@ -10,9 +10,15 @@ import serial.tools.list_ports
 from tkinter.filedialog import askopenfilename, asksaveasfilename
 from matplotlib.backends.backend_tkagg import (FigureCanvasTkAgg,  
 NavigationToolbar2Tk)
+import signal
+import posix_ipc
 
 class GenII_Interface:
 
+    # Class Constants
+    QUEUE_NAME_UAUI = "/uart_ui_message_queue"
+    QUEUE_NAME_UIUA = "/ui_uart_message_queue"
+    MY_SIGNAL = signal.SIGUSR2
     TEMPARRAYSIZE = 60
 
     def __init__(self, root):
@@ -27,7 +33,6 @@ class GenII_Interface:
         self.frameList = []
         self.frame_ctr = -1
         self.plot1 = None
-        self.SerialObj = None
 
         # Variables for labels and entries
         self.str_filePath = tk.StringVar()
@@ -75,6 +80,9 @@ class GenII_Interface:
         
         # Initialize first frame
         self.forward()
+
+        # Setup message queues and signals
+        self.setupMQ()
 
     def createTopWindow(self, root):
         #root.minsize(root.winfo_width(), root.winfo_height())
@@ -350,65 +358,50 @@ class GenII_Interface:
             self.cancelMeasurement()
 
         return
+    
+    # Function to connect to message queues
+    def setupMQ(self):
 
-    # Button Callback Functions
+        self.mq_inbox = posix_ipc.MessageQueue(self.QUEUE_NAME_UAUI)
+        self.mq_outbox = posix_ipc.MessageQueue(self.QUEUE_NAME_UIUA)
+
+        # Request notifications for queue from ui
+        self.mq_inbox.request_notification(self.MY_SIGNAL)
+
+        # Register my signal handler
+        signal.signal(self.MY_SIGNAL, self.handle_signal)
+        return
+
+    # Callback function for handling the specified user signal
+    def handle_signal(self, signal_number, stack_frame):
+        numMess = self.mq_inbox.current_messages
+        while numMess > 0: 
+            #print("Remaining Messages: %d" % numMess)
+            message, priority = self.mq_inbox.receive()
+            # RECEIVED MESSAGES ARE IN BYTE FORMAT
+            #message = message.decode('ascii')
+            
+
+            #print("Message received: %s" % (message))
+
+            # Act on command (PROCESS INPUTS
+            self.processInputs(message)
+            numMess = self.mq_inbox.current_messages
+        
+        # Re-register for notifications
+        self.mq_inbox.request_notification(self.MY_SIGNAL)
+        return
+
+    ### Button Callback Functions
+
+    # This function sends a command through the UART handler to the MCU 
+    # to check that the signal path is working correctly
     def connectToDevice(self):
 
-#         with open('C://Users/cdeli/Desktop/TemperatureLog.csv', 'w', newline = '') as output_file:
-#             csv_writer = csv.writer(output_file, delimiter = ',', quoting = csv.QUOTE_NONNUMERIC, quotechar='|')
-#             csv_writer.writerow(["Temperature"])
-
-        ret = 0
-
-        windows = False
-        if windows:
-            list = serial.tools.list_ports.comports()
-            connected = []
-            print("Connected COM ports:") 
-            if len(list) == 1:
-                genII_port = list[0].device
-            for element in list:
-                connected.append(element.device)
-                print(str(element.device) + ": " + element.description)
-            if element.manufacturer == 'SEGGER':
-                genII_port = element.device
-            if sys.platform.startswith('win'):
-                ports = ['COM%s' % (i+1) for i in range(256)]
-            elif sys.platform.startswith('linux') or sys.platform.startswith('cygwin'):
-                ports = glob.glob('/dev/tty[A-Za-z]*')
-            elif sys.platform.startswith('darwin'):
-                ports = glob.glob('/dev/tty.*')
-            else:
-                raise EnvironmentError('Unsupported platform')
-        else:
-            genII_port = "/dev/serial0"
-            #genII_port = "/dev/ttyS0"
-            #genII_port = "/dev/ttyACM0"
-        
-        #port = input("Enter the requested port number to connect")
-        SerialObj = serial.Serial(baudrate = 115200, timeout = 5) # Port is immediately opened upon creation.         
-        SerialObj.port = genII_port
-        SerialObj.bytesize = 8
-        SerialObj.partiy = 'N'
-        SerialObj.stopbits = 1
-
-        try:
-            print("Attempting connection to %s" % str(genII_port))
-            #SerialObj = serial.Serial('/dev/ttyS3') # Port is immediately opened upon creation. 
-            SerialObj.open()
-            print("Port Succesfully Opened")
-            # Save open serial object for future communications
-            self.SerialObj = SerialObj
-        except Exception as e:
-            self.deviceStatus.set("Failed to Access COM Port")
-            print(e)
-            return
-
-        # Wakeup and Check Connection Status Command. Function is blocking until timeout
+        print("Connecting to Device")
         self.cv_statusLights.itemconfig(self.light_connect, fill="yellow")
-        SerialObj.reset_input_buffer()
-        SerialObj.reset_output_buffer()
-        if not self.deviceAck(2, 3, b'C\n'):
+
+        if not self.writeToMCU(b'C\n'):
             print("Failed to Connect to Device")
             self.cv_statusLights.itemconfig(self.light_connect, fill="red")
             return 
@@ -417,14 +410,48 @@ class GenII_Interface:
         self.deviceStatus.set("Device Successfully Connected")
         self.cv_statusLights.itemconfig(self.light_connect, fill="green")
 
-        # Flush Buffers to await new temperature data 
-        self.SerialObj.reset_input_buffer()
-        self.SerialObj.reset_output_buffer()
+        # Flush inbox before entering main loop
+        self.handle_signal(0, 0)
 
-        # Call periodic read
-        self.SerialObj.timeout = 0 # No timeout
-        self.processInputs()
+        return
     
+    # Sends a command to the MCU through the UART Handler
+    def writeToMCU(self, message, ack = True):
+
+        if self.mq_outbox.current_messages > 3:
+            self.mq_outbox.receive()
+
+
+        # Send command and wait for acknowledgement from uart (create signal mask to block interrupts)
+        #signal.pthread_sigmask(signal.SIG_BLOCK, {self.MY_SIGNAL})
+        self.mq_inbox.request_notification(None)
+        print("Sending Message to MCU")
+        self.mq_outbox.send(message)
+        
+        if not ack:
+            return 1
+        
+        #print("Waiting for inbox")
+        temp = self.mq_inbox.current_messages
+        while temp < 1:
+            #print(temp)
+            temp = self.mq_inbox.current_messages
+            time.sleep(0.05)
+        
+        #print("Loop escaped")
+        response, priority = self.mq_inbox.receive()
+
+        #signal.pthread_sigmask(signal.SIG_UNBLOCK, {self.MY_SIGNAL})
+        self.mq_inbox.request_notification(self.MY_SIGNAL)
+        #print("Checking response")
+        if response == b'K':
+            print("Success!")
+            return 1
+        else: 
+            print("Failure")
+            return 0
+        
+        return 0
 
     def performCalibration(self, boardNumber):
 
@@ -432,7 +459,7 @@ class GenII_Interface:
 
         sendData = bytearray('B' + str(boardNumber) + '\n', 'ascii')
 
-        if not self.deviceAck(10, 5, sendData):
+        if not self.writeToMCU(sendData):
             self.calibStatus.set("Failed to Start Calibration")
             return 
         
@@ -489,9 +516,7 @@ class GenII_Interface:
         self.bsWindow.destroy()
         sendData = bytearray('Q' + str(boardNumber) + '\n', 'ascii')
 
-        # print(sendData)
-
-        if not self.deviceAck(10, 5, sendData):
+        if not self.writeToMCU(sendData):
             self.calibStatus.set("Failed to Start Calibration")
             return 
 
@@ -546,7 +571,7 @@ class GenII_Interface:
 
         if stat == self.heaterStatus[0] or stat == self.heaterStatus[3]: #Idle, Start Heating
             # Toggle Heater State and wait for response
-            if not self.deviceAck(10, 1, b'H\n'):
+            if not self.writeToMCU(b'H\n'):
                 self.str_heaterStatus.set(self.heaterStatus[3]) # Heater Start Error
                 return
 
@@ -554,7 +579,7 @@ class GenII_Interface:
             self.heatBtn_text.set(self.heatBtnText[1])
         else: # Stop Heating
             # Toggle Heater State and wait for response
-            if not self.deviceAck(10, 1, b'H\n'):
+            if not self.writeToMCU(b'H\n'):
                 self.str_heaterStatus.set(self.heaterStatus[4]) # Heater Stop Error
                 return
             
@@ -563,140 +588,92 @@ class GenII_Interface:
             self.tempArray = RingBuffer(self.TEMPARRAYSIZE) # Re-initialize temperature array as empty Ring Buffer
         
         return
-
-    # Function that checks for 'K' response from MCU for a variety of reasons
-    def deviceAck(self, N_Count, N_Attempt, writeData):
-        self.SerialObj.timeout = 1
-        self.dontInterrupt = True
-        acked = False
-        attemptCounter = 0
-        while attemptCounter < N_Attempt:
-            count = 0
-            try: 
-                print("Attempting to Write Command")
-                self.SerialObj.write(writeData)
-            except: 
-                print("Write Error to COM Port")
-
-            time.sleep(0.5)
-
-            print("Waiting for Ack")
-            while count < N_Count:
-                acked = (self.SerialObj.read(1) == b'K')
-                if acked:
-                    print("Command Acknowledged")
-                    self.dontInterrupt = False
-                    return 1
-
-                count+=1
-            attemptCounter+=1
-
-        self.dontInterrupt = False
-        return 0
     
-    # General handler function for serial comms
-    # Basically, it reads a character at a time and tries to match to controlCharacters.
-    # After X reads, it pauses to let other things run.
-    def processInputs(self):
-        if self.dontInterrupt:
-            self.io_task = self.root.after(IOSLEEPTIME, self.processInputs)
+    ### Takes messages from UART handler and decides what to do with them
+    # List of Control Characters:
+    # - C = 67: Calibration Data
+    # - D = 68: Regular Impedance Data
+    # - E = 69: Error/General Messages
+    # - O = 79: Output Parameters
+    # - Q = 81: EQC Data
+    # - T = 84: Temperature Measurements
+    # - X = 88: Measurement stop
+
+    def processInputs(self, message):
+        #print("Processing Inputs")
+        controlChar = message[0] # INDEXING A BYTES OBJECT GIVES YOU AN INT
+        #print(controlChar)
+        #print(b'E')
+
+        if controlChar == 67:
+            dataVec = self.decodeMessage(message, ignoreErrors = True, split = True)
+            self.finishCalibration(dataVec)
             return
-        #start_time = time.perf_counter()
-        self.SerialObj.timeout = 0.5
-        for i in range(self.SerialObj.in_waiting):
-            # Read a single character from buffer
-            controlChar = self.SerialObj.read(1)
-            if controlChar == b'E': # Error Code
-                line = self.SerialObj.readline()
-                try:
-                    decoded_line = line.decode(encoding='ascii')
-                except Exception as e:
-                    print(e);
-                    self.io_task = self.root.after(ERR_IOSLEEPTIME, self.processInputs) # Schedule new read in 500 msec
-                    return
-                print(decoded_line[0:-1])
-            elif controlChar == b'D': # Data (C and G)
-                line = self.SerialObj.readline()
-                try:
-                    decoded_line = line.decode(encoding='ascii')
-                except Exception as e:
-                    print(e)
-                    print(line)
-                    self.io_task = self.root.after(ERR_IOSLEEPTIME, self.processInputs)
-                    return
-                #print(decoded_line);
-                dataVec = decoded_line[0:-1].split('!')
-                if len(dataVec) < 8:
-                    dataVec = self.oldDataVec
+        
+        if controlChar == 68:
+            dataVec = self.decodeMessage(message, ignoreErrors = False, split = True)
+            if len(dataVec) < 8:
+                dataVec = self.oldDataVec
 
-                self.countData.append(len(self.countData) + 1)
-                self.printAndStore(dataVec)
-                self.oldDataVec = dataVec
+            self.countData.append(len(self.countData) + 1)
+            self.printAndStore(dataVec)
+            self.oldDataVec = dataVec
+            return
+        if controlChar == 69:
+            decoded_message = self.decodeMessage(message, ignoreErrors = False, split = False)
+            if decoded_message:
+                print(decoded_message)
+            return
+        
+        if controlChar == 79:
+            dataVec = self.decodeMessage(message, ignoreErrors = False, split = True)
+            if len(dataVec > 4):
+                self.setOutputParams(dataVec)
+            return
+        
+        if controlChar == 81:
+            dataVec = self.decodeMessage(message, ignoreErrors = False, split = True)
+            if len(dataVec) > 1:
+                self.finishEQC(dataVec)
+            return
+        
+        if controlChar == 84:
+            #print("Temperature")
+            decoded_message = self.decodeMessage(message, ignoreErrors = False, split = False)
+            self.str_currentTemp.set(decoded_message[0:-4]) #Increase number to reduce how many decimals are printed
+            
+            # Create moving average to see when temperature becomes stable (if last X measurements were within Y degrees of each other)
+            #if self.isHeating and len(self.tempArray.data) == self.TEMPARRAYSIZE:
+            #    self.tempArray.add(float(line[0:-4]))
+            #    if np.std(self.tempArray.data) < self.tempStabilityThreshold:
+            #        self.str_heaterStatus.set(self.heaterStatus[2])
+            return
+        
+        if controlChar == 88:
+            self.finishTest()
+            return
+        
+        print("Invalid Control Character %s" % controlChar)
+        return
 
-            elif controlChar == b'C': # Calibration return values
-                line = self.SerialObj.readline().decode(encoding='ascii', errors = 'ignore')
-                dataVec = line[0:-1].split('!')
-                self.finishCalibration(dataVec)
-            elif controlChar == b'X': # Measurement finish
-                self.finishTest()
-            elif controlChar == b'Q':
-                line = self.SerialObj.readline()
-                try:
-                    decoded_line = line.decode(encoding='ascii')
-                except Exception as e:
-                    print(e)
-                    print(line)
-                    self.io_task = self.root.after(ERR_IOSLEEPTIME, self.processInputs)
-                    return
-                #print(decoded_line);
-                dataVec = decoded_line[0:-1].split('!')
-                if len(dataVec) < 2:
-                    print(decoded_line)
-                    #print(dataVec)
-                else:
-                    self.finishEQC(dataVec)
-            elif controlChar == b'O':
-                line = self.SerialObj.readline()
-                try: 
-                    decoded_line = line.decode(encoding='ascii')
-                except Exception as e:
-                    print(e)
-                    print(line)
-                    self.io_task = self.root.after(ERR_IOSLEEPTIME, self.processInputs)
-                    return
-                
-                outputVec = decoded_line[0:-1].split('!');
-                if len(outputVec < 5):
-                    print(decoded_line)
-                else:
-                    self.setOutputParams(outputVec)
-
-            elif controlChar == b'T': # Temperature Reading
-                try:
-                    line = self.SerialObj.readline().decode(encoding='ascii')
-                    #print(line)
-                except Exception as e:
-                    print(e)
-                    print(line)
-                    self.io_task = self.root.after(ERR_IOSLEEPTIME, self.processInputs)
-                    return
-                #print("Temperature: %s" % line[0:-1])
-                self.str_currentTemp.set(line[0:-4]) #Increase number to reduce how many decimals are printed
-                
-                # Create moving average to see when temperature becomes stable (if last X measurements were within Y degrees of each other)
-                #if self.isHeating and len(self.tempArray.data) == self.TEMPARRAYSIZE:
-                #    self.tempArray.add(float(line[0:-4]))
-                #    if np.std(self.tempArray.data) < self.tempStabilityThreshold:
-                #        self.str_heaterStatus.set(self.heaterStatus[2])
-
+    # Converts message from byte array to string (char array)
+    def decodeMessage(self, message, ignoreErrors = False, split = False):
+        message = message[1:] # Chop off control Character
+        try:
+            if ignoreErrors:
+                decoded_line = message.decode(encoding='ascii', errors = 'ignore')
             else:
-                continue
+                decoded_line = message.decode(encoding='ascii')
+        except Exception as e:
+            print(e)
+            #self.io_task = self.root.after(ERR_IOSLEEPTIME, self.processInputs)
+            return 0
+        #decoded_line = message
+        if split:
+            decoded_line = decoded_line[0:-1].split('!')
 
-            break
-        # If one of the characters was matched, break loop and move on.
-        #elapsedTime = time.perf_counter() - start_time
-        #print(f"Time Elapsed: {elapsedTime}")
-        self.io_task = self.root.after(IOSLEEPTIME, self.processInputs) # Schedule new read in 500 msec
+        return decoded_line
+        
 
     # Command board to begin taking measurements and sending data    
     def beginMeasurement(self):
@@ -732,10 +709,7 @@ class GenII_Interface:
         self.plotRange = np.array([90, 110])
 
         # Cancel Any previously ongoing test on MCU End
-        try: 
-            self.SerialObj.timeout = 1
-            self.SerialObj.write(b'X\n')
-        except: 
+        if not self.writeToMCU(b'X\n'):
             print("Test Cancel Failure")
         
         # Clear output file and write header
@@ -786,14 +760,15 @@ class GenII_Interface:
         sendData = bytearray('S' + runT + collectionInterval +  incTemp + '\n', 'ascii')
         
         # Write new test params to device
-        if not self.deviceAck(10, 5, sendData):
+        if not self.writeToMCU(sendData):
             print("Failed to Write new test parameters")
             self.cancelMeasurement()
             return 
 
         # Command new test
         self.dontInterrupt = False
-        self.SerialObj.write(b'N\n')
+        if not self.writeToMCU(b'N\n'):
+            print("Cannot Start Test")
         
         self.btn_text.set(self.measBtnText[1])
 
@@ -1067,14 +1042,12 @@ class GenII_Interface:
         return
 
     def cancelMeasurement(self):
-        try: 
-            self.SerialObj.timeout = 1
-            self.SerialObj.write(b'X\n') # Cancel Ongoing Test
-            self.csv_writer = None
-            self.output_file.close()
-            print("Collection Finished.")
-        except: 
-            self.eqcStatus.set("Failed to Start test to COM Port")
+        # Cancel Ongoing Test
+        if not self.writeToMCU(b'X\n'):
+            print("Test Cancel Failure")
+            return
+        
+        print("Collection Finished.")
         return
     
     #def onClickcb(self):
@@ -1092,15 +1065,12 @@ class GenII_Interface:
                 self.channelList.append(i)
                 self.channelBin = self.channelBin + (1 << i)
             i+=1
-
-        # Send to MCU
-        #sendData = bytearray('L' + str(self.channelBin) + '\n', 'ascii')
-        #self.SerialObj.write(sendData)
         
         return
 
     def on_close(self):
          if tk.messagebox.askokcancel("Quit", "Do you want to quit the program?"):
+            self.writeToMCU(b'END', ack=False)
             if self.isMeasuring:
                 self.startStop()
             if self.isHeating:
