@@ -203,17 +203,25 @@ class UART_Manager:
 
             # Read single control character and then decide what action to take
             validCharacter = False
+            #print(self.serialObject.in_waiting)
             for j in range(self.serialObject.in_waiting):
                 controlChar = self.serialObject.read(1)
+                #print(f"j: {j}, controlChar: {controlChar}")
                 #print(f"Character {controlChar}")
                 # Check if control character is a permitted value
                 if controlChar not in self.MCUCODES:
                     #print("Unknown control character. Ignoring")
                     continue
-
+                else:
+                    #print("Character Found")
+                    #print(controlChar)
+                    validCharacter = True
+                    break
+                
+                #print("Final Character:")
+                #print(controlChar)
                 # Set a flag
                 #print("Valid Character Found: %s" % controlChar)
-                validCharacter = True
 
             if not validCharacter:
                 # Invoke scheduler  
@@ -222,11 +230,16 @@ class UART_Manager:
 
             # If control character was valid, read the rest of the message
             message = self.serialObject.readline()
-            #print(f"Message: {message}")
+            #print("Message:")
+            #print(message)
+            # print("Character: ")
+            # print(controlChar)
 
             # For commands that don't need UI involvement
-            if controlChar == b'Z':
-                if message == b'ZZZ':
+            if message[0] == 90:
+                if message[0:3] == b'ZZZ':
+                    # Clean up serial port and message queues. Also lets MCU know that command was succesfully received
+                    self.on_exit()
                     print("Shutdown System Commanded")
                     #subprocess.run(["sudo shutdown -h now"])
                 else: 
