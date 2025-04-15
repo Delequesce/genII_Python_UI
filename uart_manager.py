@@ -14,12 +14,13 @@ class UART_Manager:
     MY_SIGNAL = signal.SIGUSR1
     #GENIIPORT = "/dev/serial0" # For main system using Raspberry Pi
     GENIIPORT = "/dev/ttyACM0" # This is for my cpu acting in place of the pi for testing
-    MCUCODES = bytearray("CDEOQTXZ", 'ascii')
+    MCUCODES = bytearray("CDEQTXZ", 'ascii')
     IOSLEEPTIME = 0.1 # In sec
+    DEFAULT_WRITE_ATTEMPTS = 2
+    DEFAULT_MESSAGE_READ = 3
     # - C: Calibration Data
     # - D: Regular Impedance Data
     # - E: Error/General Messages
-    # - O: Output Parameters
     # - Q: EQC Data
     # - T: Temperature Measurements
     # - X: Measurement stop
@@ -78,11 +79,18 @@ class UART_Manager:
 
         self.serialObject = SerialObj
         # Make sure the MCU is on the other side
-        if not self.deviceAck(2, 3, b'C\n'):
+        if not self.deviceAck(self.DEFAULT_MESSAGE_READ, self.DEFAULT_WRITE_ATTEMPTS, b'C\n'):
             print("No acknowledgement from device")
             return None
         
         print("Connection to MCU Acknowledged")
+
+        # Optionally write new test command to observe data out before involving UI
+        # input()
+        # if not self.deviceAck(self.DEFAULT_MESSAGE_READ, self.DEFAULT_WRITE_ATTEMPTS, b'N\n'):
+        #     print("Test Failed to Start")
+        #     return None
+
         return
 
     
@@ -101,18 +109,18 @@ class UART_Manager:
         while attemptCounter < N_Attempt:
             count = 0
             try: 
-                print("Attempting to Write Command")
+                #print("Attempting to Write Command")
                 self.serialObject.write(writeData)
             except: 
                 print("Write Error to COM Port")
 
-            time.sleep(0.1)
+            time.sleep(0.05)
 
             #print("Waiting for Ack")
             while count < N_Count:
-                response = self.serialObject.read(1)
-                print(response)
-                acked = (response == b'K')
+                response = self.serialObject.readline()
+                #print(response)
+                acked = (response == b'K\n')
                 if acked:
                     print("Command Acknowledged")
                     #self.dontInterrupt = False
@@ -187,11 +195,12 @@ class UART_Manager:
                 # Register prescence of UI
                 if message == b'END':
                     self.ui_connected = False
+                    print("UI Disconnected")
                     self.mq_outbox.send(b'K')
                 else:
                     self.ui_connected = True
                     # Forward command to MCU and let UI know it was successfully transmitted
-                    if self.deviceAck(1, 5, message):
+                    if self.deviceAck(self.DEFAULT_MESSAGE_READ, self.DEFAULT_WRITE_ATTEMPTS, message):
                         print("Ack Sent to UI")
                         self.mq_outbox.send(b'K')
                     else:
@@ -256,7 +265,7 @@ class UART_Manager:
                 self.mq_outbox.receive()
 
             # Add back the controlCharacter so the UI can understand what to do with it
-            #message = controlChar + message
+            message = controlChar + message
             #print("Sending message to UI:")
             #print(message)
             self.mq_outbox.send(message)
@@ -289,7 +298,7 @@ class UART_Manager:
                     self.ui_connected = True
                     # Forward command to MCU and let UI know it was successfully transmitted
                     #print("Checking for acknowledgement")
-                    if self.deviceAck(1, 5, message):
+                    if self.deviceAck(self.DEFAULT_MESSAGE_READ, self.DEFAULT_WRITE_ATTEMPTS, message):
                         #print("Response sent to UI")
                         #print("Current Outbox Message Count: %d" % self.mq_outbox.current_messages)
                         self.mq_outbox.send(b'K')
@@ -346,8 +355,11 @@ class UART_Manager:
     def on_exit(self):
 
         # Send Disconnect Command to MCU
+        print("Stopping Any Active Tests")
+        self.deviceAck(self.DEFAULT_MESSAGE_READ, self.DEFAULT_WRITE_ATTEMPTS, b'X\n')
+
         print("Disconnecting from MCU")
-        self.deviceAck(1, 1, b'Y\n')
+        self.deviceAck(self.DEFAULT_MESSAGE_READ, self.DEFAULT_WRITE_ATTEMPTS, b'Y\n')
 
         # Destroy Message Queues
         print("Destroying the message queues.")

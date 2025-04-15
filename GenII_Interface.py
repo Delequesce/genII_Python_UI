@@ -12,6 +12,8 @@ from matplotlib.backends.backend_tkagg import (FigureCanvasTkAgg,
 NavigationToolbar2Tk)
 import signal
 import posix_ipc
+import datetime
+import os
 
 class GenII_Interface:
 
@@ -20,8 +22,9 @@ class GenII_Interface:
     QUEUE_NAME_UIUA = "/ui_uart_message_queue"
     MY_SIGNAL = signal.SIGUSR2
     TEMPARRAYSIZE = 60
+    DATAVECSIZE = 28
 
-    def __init__(self, root):
+    def __init__(self, root, use_mq = True):
 
         self.root = root
         self.deviceStatus = tk.StringVar()
@@ -71,18 +74,22 @@ class GenII_Interface:
         self.channelBin = 0
         self.DataMat = []
         self.prevTime = 0
-        self.oldDataVec = [0, 0, 0, 0, 0, 0, 0, 0]
+        self.oldDataVec = np.zeros(self.DATAVECSIZE)
         self.output_file = None
         self.csv_writer = None
         self.tempArray = RingBuffer(self.TEMPARRAYSIZE)
         self.tempStabilityThreshold = 0.5
         self.bsWindow = None
+        self.fakeData = False
+        self.noSerial = False
+        self.NUMDATAMAX = 1800
         
         # Initialize first frame
         self.forward()
 
         # Setup message queues and signals
-        self.setupMQ()
+        if use_mq:
+            self.setupMQ()
 
     def createTopWindow(self, root):
         #root.minsize(root.winfo_width(), root.winfo_height())
@@ -418,6 +425,9 @@ class GenII_Interface:
     # Sends a command to the MCU through the UART Handler
     def writeToMCU(self, message, ack = True):
 
+        if self.noSerial:
+            return 1
+
         if self.mq_outbox.current_messages > 3:
             self.mq_outbox.receive()
 
@@ -594,7 +604,6 @@ class GenII_Interface:
     # - C = 67: Calibration Data
     # - D = 68: Regular Impedance Data
     # - E = 69: Error/General Messages
-    # - O = 79: Output Parameters
     # - Q = 81: EQC Data
     # - T = 84: Temperature Measurements
     # - X = 88: Measurement stop
@@ -611,11 +620,12 @@ class GenII_Interface:
             return
         
         if controlChar == 68:
+            # Ideally breaks into self.DATAVECSIZE element list (28 as of 4/15/25)
             dataVec = self.decodeMessage(message, ignoreErrors = False, split = True)
-            if len(dataVec) < 8:
+            if len(dataVec) < self.DATAVECSIZE:
                 dataVec = self.oldDataVec
 
-            self.countData.append(len(self.countData) + 1)
+            #print(dataVec)
             self.printAndStore(dataVec)
             self.oldDataVec = dataVec
             return
@@ -623,12 +633,6 @@ class GenII_Interface:
             decoded_message = self.decodeMessage(message, ignoreErrors = False, split = False)
             if decoded_message:
                 print(decoded_message)
-            return
-        
-        if controlChar == 79:
-            dataVec = self.decodeMessage(message, ignoreErrors = False, split = True)
-            if len(dataVec > 4):
-                self.setOutputParams(dataVec)
             return
         
         if controlChar == 81:
@@ -678,30 +682,30 @@ class GenII_Interface:
     # Command board to begin taking measurements and sending data    
     def beginMeasurement(self):
 
-        isTestingUI = False
-        if isTestingUI:
-            # Initialize plot
-            self.plot1.cla()
-            for i in range(1):
-                self.plot1.plot([], [], 'o-', label = f"Ch {i+1}", markersize=4, animated=True)
+        # isTestingUI = False
+        # if isTestingUI:
+        #     # Initialize plot
+        #     self.plot1.cla()
+        #     for i in range(1):
+        #         self.plot1.plot([], [], 'o-', label = f"Ch {i+1}", markersize=4, animated=True)
 
-            self.lines = self.plot1.get_lines()
-            self.plot1.set_xlabel("Time (s)")
-            self.plot1.set_ylabel("Capacitance (pF)")
-            self.plot1.legend(loc='upper left', prop={'size':6})
-            self.plot1.set_xlim(0, 100)
-            self.plot1.set_ylim(0, 100)
+        #     self.lines = self.plot1.get_lines()
+        #     self.plot1.set_xlabel("Time (s)")
+        #     self.plot1.set_ylabel("Capacitance (pF)")
+        #     self.plot1.legend(loc='upper left', prop={'size':6})
+        #     self.plot1.set_xlim(0, 100)
+        #     self.plot1.set_ylim(0, 100)
 
-            # Create Blitting Manager to handle canvas and line updates and redraws
-            self.bm = BlitManager(self.canvas, self.lines)
+        #     # Create Blitting Manager to handle canvas and line updates and redraws
+        #     self.bm = BlitManager(self.canvas, self.lines)
 
-            # Run loop to plot data
-            xData = np.arange(0, 100)
-            for j in range(100):
-                self.lines[0].set_xdata(xData[0:j])
-                self.lines[0].set_ydata(xData[0:j])
-                self.bm.update()
-            return
+        #     # Run loop to plot data
+        #     xData = np.arange(0, 100)
+        #     for j in range(100):
+        #         self.lines[0].set_xdata(xData[0:j])
+        #         self.lines[0].set_ydata(xData[0:j])
+        #         self.bm.update()
+        #     return
 
 
         invalid = 0
@@ -712,14 +716,36 @@ class GenII_Interface:
         if not self.writeToMCU(b'X\n'):
             print("Test Cancel Failure")
         
-        # Clear output file and write header
+        # Copy template file and write basic data
+        template_file = None
         if self.filePath:
-            with open(self.filePath, 'w', newline = '') as output_file:
-                csv_writer = csv.writer(output_file, delimiter = ',', quoting = csv.QUOTE_NONNUMERIC, quotechar='|')
-                csv_writer.writerow(['Time', 'C1', 'C2', 'C3','C4','G1','G2','G3', 'G4', 'Temp'])
+            try:
+                template_file = open("DataFileTemplate.csv")
+            except FileNotFoundError as e:
+                tk.messagebox.showerror(title="File Not Found Error", 
+                                        message="Template Data File Not Found. Test Aborting")
+                return
+            
+        if template_file:
+            readerObj = csv.reader(template_file, delimiter=',')
+            
+            date = datetime.date.today().strftime("%Y-%m-%d")
+            id = "NULL"
+            
+            with open(self.filePath, 'w') as output_file:
+                writerObj = csv.writer(output_file, delimiter = ',')
+                rowCounter = 0
+                for row in readerObj:
+                    if rowCounter == 2:
+                        row[1] = date
+                    if rowCounter == 3:
+                        row[1] = id
+                    writerObj.writerow(row)
+                    rowCounter = rowCounter + 1
+
             # Reopen file in append mode to continuously write data
             self.output_file = open(self.filePath, 'a', newline = '')
-            self.csv_writer = csv.writer(self.output_file, delimiter = ',', quoting=csv.QUOTE_NONNUMERIC)
+            self.csv_writer = csv.writer(self.output_file, delimiter = ',')
 
         # Send command to device to start measurement. Cancel reads during this process
         runT = self.str_runT.get()
@@ -806,6 +832,28 @@ class GenII_Interface:
 
         # After function exits, input processing thread will continue to run and handle incoming data
         #self.io_task = tk.after(100, self.processInputs) # Schedule new read in 500 msec
+
+        # If we are using fake data, instead of returning, just directly write the data to the necessary tables
+        if self.fakeData:
+            with open("FakeDataFile.csv", 'r') as data_file:
+                readerObj = csv.reader(data_file, delimiter=',')
+                discard = next(readerObj)
+                rowCounter = 0
+                for row in readerObj:
+                    self.printAndStore(row)
+                    if rowCounter > self.NUMDATAMAX:
+                        break
+                    rowCounter = rowCounter + 1
+
+            dataVec = np.asarray([[0, 600, 0.167, 950,  0.004, 850], 
+                                [1, 600,  0.167, 950, 0.004, 850],
+                                [2, 160,  0.133, 280, 0.004, 230],
+                                [3, 160,  0.133, 280, 0.004, 230]], dtype='U5')
+            
+            for chan in self.channelList:
+                self.setOutputParams(dataVec[chan])
+
+            self.finishTest()
         return
     
 
@@ -814,28 +862,36 @@ class GenII_Interface:
     #        csv_writer = csv.writer(output_file, delimiter = ',', quoting = csv.QUOTE_NONNUMERIC, quotechar='|')
     #        csv_writer.writerow([float(line)])
 
+    # DataVec comes in a [C1, G1, Tpeak, DE, DE_Time, Smax, Smax_Time, C2, G2, ... ]
     def printAndStore(self, dataVec):
 
         # Use to calculate time in between each collection
         #currTime = time.perf_counter()
         #print(currTime - self.prevTime)
         #self.prevTime = currTime
-
         # Get current count
+        self.countData.append(len(self.countData) + 1)
         i = self.countData[-1]
+
+        #print(f"Data Point {i}, Data Vector: {dataVec}")
+        useOldData = False
         
         # Process Data Vector
         CVec = []
         GVec = []
 
         try:
-            for C, G in zip(dataVec[0::2], dataVec[1::2]):
+            for C, G in zip(dataVec[0::7], dataVec[1::7]):
                 CVec.append(float(C[:-1]))
                 GVec.append(float(G[:-1]))
 
         except Exception as e:
-            print(e)
-            for C, G in zip(self.oldDataVec[0::2], self.oldDataVec[1::2]):
+            useOldData = True
+            print("DataVec Format Error, using old vector")
+            print(dataVec)
+        
+        if useOldData:
+            for C, G in zip(self.oldDataVec[0::7], self.oldDataVec[1::7]):
                 CVec.append(float(C[:-1]))
                 GVec.append(float(G[:-1]))
             return
@@ -850,7 +906,8 @@ class GenII_Interface:
         try:
             self.DataMat[i-1, -1] = self.str_currentTemp.get()
         except Exception as e:
-            print(e)
+            self.DataMat[i-1, -1] = 0
+            #print(e)
 
         smallMat = self.DataMat[i-1]
         if smallMat.size == 0:
@@ -863,7 +920,9 @@ class GenII_Interface:
             self.plotRange[1] = smallMatMax
 
         if self.csv_writer:
-            self.csv_writer.writerow(np.concatenate(([i], smallMat)))
+            dataToWrite = np.concatenate(([np.round(i/60, 3)], smallMat))
+            dataToWrite = list(map(lambda t: "%0.3f" % t, dataToWrite))
+            self.csv_writer.writerow(dataToWrite)
 
         self.plot1.set_xlim(-1, np.floor((i-1)/30 + 1) * 30)
         self.plot1.set_ylim(self.plotRange[0]-1, self.plotRange[1]+1)
@@ -877,6 +936,14 @@ class GenII_Interface:
             self.bm.update()
             self.redrawCounter+=1
 
+
+        # Set Output params if different/time
+
+        for chan in self.channelList:
+            self.str_tpeak_est[chan].set(dataVec[7*chan+2])
+            self.str_deltaEps_est[chan].set(dataVec[7*chan+3])
+            self.str_smax_est[chan].set(dataVec[7*chan+5])
+
         #time_elapsed = time.perf_counter() - start_time
         #print(f"time_elapsed: {time_elapsed:0.3f}")
 
@@ -886,16 +953,17 @@ class GenII_Interface:
         # End of Experiment
         if self.output_file:
             self.csv_writer = None
-            self.output_file.close();
+            self.output_file.close()
             
         if not self.countData:
             return
 
         self.DataMat = self.DataMat[0:self.countData[-1]]
 
+        # Calculate mean and variance of data (for fixed chip testing)
         DataMean = np.mean(self.DataMat, 0)
         DataStd = np.std(self.DataMat, 0)
-        N = len(self.countData)
+        N, M = self.DataMat.shape
 
         print("%d samples successfully read" % (N))
         for chan in self.channelList:
@@ -903,12 +971,81 @@ class GenII_Interface:
             print("Capacitance: %0.4f +- %0.4f pF" % (DataMean[chan], DataStd[chan]))
             print("Conductance: %0.4f +- %0.4f mS" % (DataMean[chan+4], DataStd[chan+4]))
         
-        # Calculate Output Parameters, if necessary
-        #if self.isMeasuring:
-        #    self.calculateParameters(self.DataMat, self.channelList)
+        # Normalize Plot based on output params, if available
+        normCDataMat = np.zeros((N, 4))
+        if self.isMeasuring:
+            for chan in self.channelList:
+                tpeak = None
+                peakVal = None
+                try:
+                    tpeak = int(self.str_tpeak_est[chan].get())
+                    peakVal = self.DataMat[tpeak,chan]
+                except ValueError as e:
+                    print("No Valid Tpeak Reported\n")
+                    break
+                if not peakVal:
+                    break
 
+                # Normalize Data (NumPy handles divide by zero cases automatically)
+                timeVec = np.round(np.divide(self.countData , 60), decimals=3)
+                normCDataMat[:,chan] = np.round(np.divide(self.DataMat[:,chan],peakVal), decimals=3)
+                self.plot1.cla()
+                for chan in self.channelList:
+                    self.plot1.plot(timeVec, normCDataMat, marker = 'o', label = f"Ch {chan}", markersize = 4, fillstyle = 'full')
+                #self.plot1.legend("Channel 1", "Channel 2", "Channel 3")
+                self.plot1.set_xlim(-1, timeVec[-1] + 1)
+                self.plot1.set_ylim(0.7, np.max([1.01, np.max(normCDataMat)]))
+                self.plot1.set_xlabel("Time (min)")
+                self.plot1.set_ylabel("Normalized Permittivity (real)")
+                self.canvas.draw()
+        
+        # Set state for next test
         self.btn_text.set("Begin Measurement")
         self.isMeasuring = 0
+
+        # Write Normalized Data and Output Params to file (even if it is bad)
+        if not self.filePath:
+            return
+        
+        tempFile = "tempFile.csv"
+        with open(self.filePath, 'r', newline='') as input_file:
+            readerObj = csv.reader(input_file, delimiter=',')
+            with open(tempFile, 'w', newline = '') as output_file:
+                csv_writer = csv.writer(output_file, delimiter = ',')
+                # Take each row and copy it to the temporary file, adding new data as needed
+                # Rows 8-13 are output params
+                # Data starts at row 18
+                outputParamTable = np.zeros((6, 4), dtype='U5')
+                for chan in self.channelList:
+                    outputParamTable[0, chan] = self.str_tpeak_est[chan].get()
+                    outputParamTable[1, chan] = self.str_deltaEps_est[chan].get()
+                    outputParamTable[2, chan] = self.str_smax_est[chan].get()
+                    outputParamTable[3, chan] = "n/a"
+                    outputParamTable[4, chan] = "n/a"
+                    outputParamTable[5, chan] = "n/a"
+
+                rowCount = 1
+                for row in readerObj:
+                    if rowCount < 14 and rowCount > 7:
+                        row[1:5] = outputParamTable[rowCount-8]
+                    if rowCount > 17:
+                        row[10:14] = normCDataMat[rowCount-18]
+
+                    csv_writer.writerow(row)
+                    rowCount = rowCount + 1
+
+                # For testing only
+                for x in range(N):
+                    row = np.zeros(14)
+                    row[10:14] = normCDataMat[x]
+                    csv_writer.writerow(row)
+
+
+        # Rename tempFile to be the actual file and delete the old file
+        os.remove(self.filePath)
+        os.rename(tempFile, self.filePath)
+
+
         return
 
     def calculateParameters(self, DataMat, channelList):
@@ -999,9 +1136,9 @@ class GenII_Interface:
 
     # Sets the parameter estimate values upon transfer from MCU
     def setOutputParams(self, outputVec):
-        chan = 0
-        self.str_tpeak_est[chan].set(outputVec[0])
-        self.str_deltaEps_est[chan].set(outputVec[1])
+        chan = int(outputVec[0])
+        self.str_tpeak_est[chan].set(outputVec[1])
+        self.str_deltaEps_est[chan].set(outputVec[2])
         self.str_smax_est[chan].set(outputVec[4])
         return
 
@@ -1048,6 +1185,7 @@ class GenII_Interface:
             return
         
         print("Collection Finished.")
+        self.finishTest()
         return
     
     #def onClickcb(self):
