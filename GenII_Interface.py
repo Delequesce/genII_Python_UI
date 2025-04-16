@@ -20,7 +20,7 @@ class GenII_Interface:
     # Class Constants
     QUEUE_NAME_UAUI = "/uart_ui_message_queue"
     QUEUE_NAME_UIUA = "/ui_uart_message_queue"
-    MY_SIGNAL = signal.SIGUSR2
+    #MY_SIGNAL = signal.SIGUSR2
     TEMPARRAYSIZE = 60
     DATAVECSIZE = 28
 
@@ -53,6 +53,9 @@ class GenII_Interface:
 
         self.timerVar = tk.StringVar()
         self.timerVar.set('')
+
+        # Tasks
+        self.mq_task = None
 
         # Frames
         self.frameList.append(self.createTopWindow(root)) # Create a top window element for root instance
@@ -373,31 +376,48 @@ class GenII_Interface:
         self.mq_outbox = posix_ipc.MessageQueue(self.QUEUE_NAME_UIUA)
 
         # Request notifications for queue from ui
-        self.mq_inbox.request_notification(self.MY_SIGNAL)
+        #self.mq_inbox.request_notification(self.MY_SIGNAL)
 
         # Register my signal handler
-        signal.signal(self.MY_SIGNAL, self.handle_signal)
+        #signal.signal(self.MY_SIGNAL, self.handle_signal)
+        
+        # Set up loop to check message queues
+        self.mq_task = self.root.after(200, self.checkMessageQueue)
+
         return
 
     # Callback function for handling the specified user signal
-    def handle_signal(self, signal_number, stack_frame):
-        numMess = self.mq_inbox.current_messages
-        while numMess > 0: 
-            #print("Remaining Messages: %d" % numMess)
-            message, priority = self.mq_inbox.receive()
-            # RECEIVED MESSAGES ARE IN BYTE FORMAT
-            #message = message.decode('ascii')
+    # def handle_signal(self, signal_number, stack_frame):
+    #     numMess = self.mq_inbox.current_messages
+    #     while numMess > 0: 
+    #         #print("Remaining Messages: %d" % numMess)
+    #         message, priority = self.mq_inbox.receive()
+    #         # RECEIVED MESSAGES ARE IN BYTE FORMAT
+    #         #message = message.decode('ascii')
             
 
-            #print("Message received: %s" % (message))
+    #         #print("Message received: %s" % (message))
+
+    #         # Act on command (PROCESS INPUTS
+    #         self.processInputs(message)
+    #         numMess = self.mq_inbox.current_messages
+        
+    #     # Re-register for notifications
+    #     self.mq_inbox.request_notification(self.MY_SIGNAL)
+    #     return
+
+    # Checks the message queue and handles all of the awaiting messages
+    def checkMessageQueue(self):
+        numMess = self.mq_inbox.current_messages
+        while numMess > 0: 
+            message, priority = self.mq_inbox.receive()
 
             # Act on command (PROCESS INPUTS
+            #print("Message received: %s" % (message))
             self.processInputs(message)
             numMess = self.mq_inbox.current_messages
-        
-        # Re-register for notifications
-        self.mq_inbox.request_notification(self.MY_SIGNAL)
-        return
+
+        self.mq_task = self.root.after(200, self.checkMessageQueue)
 
     ### Button Callback Functions
 
@@ -418,7 +438,8 @@ class GenII_Interface:
         self.cv_statusLights.itemconfig(self.light_connect, fill="green")
 
         # Flush inbox before entering main loop
-        self.handle_signal(0, 0)
+        #self.handle_signal(0, 0)
+        print("Successfully Connected")
 
         return
     
@@ -428,13 +449,16 @@ class GenII_Interface:
         if self.noSerial:
             return 1
 
-        if self.mq_outbox.current_messages > 3:
-            self.mq_outbox.receive()
-
 
         # Send command and wait for acknowledgement from uart (create signal mask to block interrupts)
         #signal.pthread_sigmask(signal.SIG_BLOCK, {self.MY_SIGNAL})
-        self.mq_inbox.request_notification(None)
+        #self.mq_inbox.request_notification(None)
+        self.root.after_cancel(self.mq_task)
+
+        # Flush inbox
+        while self.mq_outbox.current_messages > 0:
+            self.mq_outbox.receive()
+
         print("Sending Message to MCU")
         self.mq_outbox.send(message)
         
@@ -452,7 +476,8 @@ class GenII_Interface:
         response, priority = self.mq_inbox.receive()
 
         #signal.pthread_sigmask(signal.SIG_UNBLOCK, {self.MY_SIGNAL})
-        self.mq_inbox.request_notification(self.MY_SIGNAL)
+        #self.mq_inbox.request_notification(self.MY_SIGNAL)
+        self.root.after(200, self.checkMessageQueue)
         #print("Checking response")
         if response == b'K':
             print("Success!")
@@ -654,6 +679,7 @@ class GenII_Interface:
             return
         
         if controlChar == 88:
+            print("Finishing Test")
             self.finishTest()
             return
         
@@ -807,6 +833,7 @@ class GenII_Interface:
 
         # Initialize plot
         self.plot1.cla()
+        self.plot1.clear()
         for i in range(4):
             self.plot1.plot([], [], 'o-', label = f"Ch {i+1}", markersize=4, animated=True)
 
@@ -966,10 +993,10 @@ class GenII_Interface:
         N, M = self.DataMat.shape
 
         print("%d samples successfully read" % (N))
-        for chan in self.channelList:
-            print(f"Channel {chan}: ")
-            print("Capacitance: %0.4f +- %0.4f pF" % (DataMean[chan], DataStd[chan]))
-            print("Conductance: %0.4f +- %0.4f mS" % (DataMean[chan+4], DataStd[chan+4]))
+        # for chan in self.channelList:
+        #     print(f"Channel {chan}: ")
+        #     print("Capacitance: %0.4f +- %0.4f pF" % (DataMean[chan], DataStd[chan]))
+        #     print("Conductance: %0.4f +- %0.4f mS" % (DataMean[chan+4], DataStd[chan+4]))
         
         # Normalize Plot based on output params, if available
         normCDataMat = np.zeros((N, 4))
@@ -978,7 +1005,7 @@ class GenII_Interface:
                 tpeak = None
                 peakVal = None
                 try:
-                    tpeak = int(self.str_tpeak_est[chan].get())
+                    tpeak = int(float(self.str_tpeak_est[chan].get()))
                     peakVal = self.DataMat[tpeak,chan]
                 except ValueError as e:
                     print("No Valid Tpeak Reported\n")
@@ -997,6 +1024,7 @@ class GenII_Interface:
                 self.plot1.set_ylim(0.7, np.max([1.01, np.max(normCDataMat)]))
                 self.plot1.set_xlabel("Time (min)")
                 self.plot1.set_ylabel("Normalized Permittivity (real)")
+                self.plot1.legend(loc='upper left', prop={'size':6})
                 self.canvas.draw()
         
         # Set state for next test
@@ -1045,6 +1073,7 @@ class GenII_Interface:
         os.remove(self.filePath)
         os.rename(tempFile, self.filePath)
 
+        tk.messagebox.showinfo(title="Test Finished", message="Test Completed Successfully")
 
         return
 
