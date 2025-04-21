@@ -13,8 +13,8 @@ class UART_Manager:
     QUEUE_NAME_UAUI = "/uart_ui_message_queue"
     QUEUE_NAME_UIUA = "/ui_uart_message_queue"
     MY_SIGNAL = signal.SIGUSR1
-    #GENIIPORT = "/dev/serial0" # For main system using Raspberry Pi
-    GENIIPORT = "/dev/ttyACM0" # This is for my cpu acting in place of the pi for testing
+    GENIIPORT = "/dev/serial0" # For main system using Raspberry Pi
+    #GENIIPORT = "/dev/ttyACM0" # This is for my cpu acting in place of the pi for testing
     MCUCODES = bytearray("CDEQTXZ", 'ascii')
     IOSLEEPTIME = 0.1 # In sec
     DEFAULT_WRITE_ATTEMPTS = 2
