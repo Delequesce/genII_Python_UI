@@ -662,6 +662,7 @@ class GenII_Interface:
         
         if controlChar == 81:
             dataVec = self.decodeMessage(message, ignoreErrors = False, split = True)
+            print(dataVec)
             if len(dataVec) > 1:
                 self.finishEQC(dataVec)
             return
@@ -918,10 +919,14 @@ class GenII_Interface:
             print(dataVec)
         
         if useOldData:
-            for C, G in zip(self.oldDataVec[0::7], self.oldDataVec[1::7]):
-                CVec.append(float(C[:-1]))
-                GVec.append(float(G[:-1]))
-            return
+            try:
+                for C, G in zip(self.oldDataVec[0::7], self.oldDataVec[1::7]):
+                    CVec.append(float(C[:-1]))
+                    GVec.append(float(G[:-1]))
+            except Exception as e:
+                print("Old Vec format error")
+                print(self.oldDataVec)
+                return
 
         for chan in self.channelList:
             self.DataMat[i-1, chan] = CVec[chan]
@@ -1016,16 +1021,23 @@ class GenII_Interface:
                 # Normalize Data (NumPy handles divide by zero cases automatically)
                 timeVec = np.round(np.divide(self.countData , 60), decimals=3)
                 normCDataMat[:,chan] = np.round(np.divide(self.DataMat[:,chan],peakVal), decimals=3)
-                self.plot1.cla()
-                for chan in self.channelList:
-                    self.plot1.plot(timeVec, normCDataMat, marker = 'o', label = f"Ch {chan}", markersize = 4, fillstyle = 'full')
-                #self.plot1.legend("Channel 1", "Channel 2", "Channel 3")
-                self.plot1.set_xlim(-1, timeVec[-1] + 1)
-                self.plot1.set_ylim(0.7, np.max([1.01, np.max(normCDataMat)]))
-                self.plot1.set_xlabel("Time (min)")
-                self.plot1.set_ylabel("Normalized Permittivity (real)")
-                self.plot1.legend(loc='upper left', prop={'size':6})
-                self.canvas.draw()
+
+                # Re-plot
+                l = self.lines[chan]
+                l.set_xdata(timeVec)
+                l.set_ydata(normCDataMat[:,chan])
+
+            # self.plot1.cla()
+            # self.plot1.clear()
+            # for chan in self.channelList:
+            #     self.plot1.plot(timeVec, normCDataMat, marker = 'o', label = f"Ch {chan}", markersize = 4, fillstyle = 'full')
+            #self.plot1.legend("Channel 1", "Channel 2", "Channel 3")
+            self.plot1.set_xlim(-1, timeVec[-1] + 1)
+            self.plot1.set_ylim(0.7, np.max([1.01, np.max(normCDataMat)]))
+            self.plot1.set_xlabel("Time (min)")
+            self.plot1.set_ylabel("Normalized Permittivity (real)")
+            self.plot1.legend(loc='upper left', prop={'size':6})
+            self.canvas.draw()
         
         # Set state for next test
         self.btn_text.set("Begin Measurement")
@@ -1043,7 +1055,7 @@ class GenII_Interface:
                 # Take each row and copy it to the temporary file, adding new data as needed
                 # Rows 8-13 are output params
                 # Data starts at row 18
-                outputParamTable = np.zeros((6, 4), dtype='U5')
+                outputParamTable = np.zeros((6, 4), dtype='U7')
                 for chan in self.channelList:
                     outputParamTable[0, chan] = self.str_tpeak_est[chan].get()
                     outputParamTable[1, chan] = self.str_deltaEps_est[chan].get()
@@ -1063,10 +1075,10 @@ class GenII_Interface:
                     rowCount = rowCount + 1
 
                 # For testing only
-                for x in range(N):
-                    row = np.zeros(14)
-                    row[10:14] = normCDataMat[x]
-                    csv_writer.writerow(row)
+                # for x in range(N):
+                #     row = np.zeros(14)
+                #     row[10:14] = normCDataMat[x]
+                #     csv_writer.writerow(row)
 
 
         # Rename tempFile to be the actual file and delete the old file

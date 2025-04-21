@@ -4,6 +4,7 @@ import posix_ipc
 from GracefulExit import GracefulExit as ge
 import time
 import subprocess
+import os
 
 
 class UART_Manager:
@@ -250,7 +251,7 @@ class UART_Manager:
                     # Clean up serial port and message queues. Also lets MCU know that command was succesfully received
                     self.on_exit()
                     print("Shutdown System Commanded")
-                    #subprocess.run(["sudo shutdown -h now"])
+                    os.system(["sudo shutdown -h now"])
                 else: 
                     print(message)
                 continue
