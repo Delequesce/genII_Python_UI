@@ -23,6 +23,7 @@ class GenII_Interface:
     #MY_SIGNAL = signal.SIGUSR2
     TEMPARRAYSIZE = 60
     DATAVECSIZE = 28
+    BATTERYLEVELS = [100, 75, 50, 25, 0]
 
     def __init__(self, root, use_mq = True):
 
@@ -86,13 +87,16 @@ class GenII_Interface:
         self.fakeData = False
         self.noSerial = False
         self.NUMDATAMAX = 1800
-        
+
         # Initialize first frame
         self.forward()
 
         # Setup message queues and signals
         if use_mq:
             self.setupMQ()
+
+        # Remove Heater
+        #self.writeToMCU(b'H0\n', mqTask=False)
 
     def createTopWindow(self, root):
         #root.minsize(root.winfo_width(), root.winfo_height())
@@ -375,6 +379,10 @@ class GenII_Interface:
         self.mq_inbox = posix_ipc.MessageQueue(self.QUEUE_NAME_UAUI)
         self.mq_outbox = posix_ipc.MessageQueue(self.QUEUE_NAME_UIUA)
 
+        # Flush inbox
+        while self.mq_inbox.current_messages > 0:
+            self.mq_inbox.receive()
+
         # Request notifications for queue from ui
         #self.mq_inbox.request_notification(self.MY_SIGNAL)
 
@@ -444,16 +452,16 @@ class GenII_Interface:
         return
     
     # Sends a command to the MCU through the UART Handler
-    def writeToMCU(self, message, ack = True):
+    def writeToMCU(self, message, ack = True, mqTask = True):
 
         if self.noSerial:
             return 1
 
-
         # Send command and wait for acknowledgement from uart (create signal mask to block interrupts)
         #signal.pthread_sigmask(signal.SIG_BLOCK, {self.MY_SIGNAL})
         #self.mq_inbox.request_notification(None)
-        self.root.after_cancel(self.mq_task)
+        if mqTask:
+            self.root.after_cancel(self.mq_task)
 
         # Flush inbox
         while self.mq_outbox.current_messages > 0:
@@ -477,7 +485,8 @@ class GenII_Interface:
 
         #signal.pthread_sigmask(signal.SIG_UNBLOCK, {self.MY_SIGNAL})
         #self.mq_inbox.request_notification(self.MY_SIGNAL)
-        self.root.after(200, self.checkMessageQueue)
+        if mqTask:
+            self.root.after(200, self.checkMessageQueue)
         #print("Checking response")
         if response == b'K':
             print("Success!")
@@ -606,7 +615,7 @@ class GenII_Interface:
 
         if stat == self.heaterStatus[0] or stat == self.heaterStatus[3]: #Idle, Start Heating
             # Toggle Heater State and wait for response
-            if not self.writeToMCU(b'H\n'):
+            if not self.writeToMCU(b'H1\n'):
                 self.str_heaterStatus.set(self.heaterStatus[3]) # Heater Start Error
                 return
 
@@ -614,7 +623,7 @@ class GenII_Interface:
             self.heatBtn_text.set(self.heatBtnText[1])
         else: # Stop Heating
             # Toggle Heater State and wait for response
-            if not self.writeToMCU(b'H\n'):
+            if not self.writeToMCU(b'H0\n'):
                 self.str_heaterStatus.set(self.heaterStatus[4]) # Heater Stop Error
                 return
             
@@ -626,6 +635,7 @@ class GenII_Interface:
     
     ### Takes messages from UART handler and decides what to do with them
     # List of Control Characters:
+    # - B = 66: Battery Level
     # - C = 67: Calibration Data
     # - D = 68: Regular Impedance Data
     # - E = 69: Error/General Messages
@@ -639,6 +649,13 @@ class GenII_Interface:
         #print(controlChar)
         #print(b'E')
 
+        if controlChar == 66:
+            decoded_message = self.decodeMessage(message, ignoreErrors = False, split = False)
+            if decoded_message:
+                print(decoded_message)
+                tk.messagebox.showwarning(title="Battery Warning", message=f"Battery Level at {self.BATTERYLEVELS[int(decoded_message)]}%")
+            return
+        
         if controlChar == 67:
             dataVec = self.decodeMessage(message, ignoreErrors = True, split = True)
             self.finishCalibration(dataVec)
@@ -670,6 +687,7 @@ class GenII_Interface:
         if controlChar == 84:
             #print("Temperature")
             decoded_message = self.decodeMessage(message, ignoreErrors = False, split = False)
+            self.storeTemps(decoded_message[0:-4]) # Optional for logging
             self.str_currentTemp.set(decoded_message[0:-4]) #Increase number to reduce how many decimals are printed
             
             # Create moving average to see when temperature becomes stable (if last X measurements were within Y degrees of each other)
@@ -737,7 +755,7 @@ class GenII_Interface:
 
         invalid = 0
         self.filePath = self.str_filePath.get()
-        self.plotRange = np.array([90, 110])
+        self.plotRange = np.array([149, 151])
 
         # Cancel Any previously ongoing test on MCU End
         if not self.writeToMCU(b'X\n'):
@@ -845,6 +863,11 @@ class GenII_Interface:
         self.plot1.set_xlim(-1, 30)
 
         # Create Blitting Manager to handle canvas and line updates and redraws
+        # Optionally, add legend as an artist
+        # self.plot1.legend(loc='upper left', prop={'size':6})
+        # self.plot1.add_artist(self.plot1.legend)
+        # artists = [self.lines, self.plot1.legend]
+        # self.bm = BlitManager(self.canvas, artists)
         self.bm = BlitManager(self.canvas, self.lines)
         
         i = 0
@@ -885,10 +908,10 @@ class GenII_Interface:
         return
     
 
-    #def storeTemps(self, line):
-    #    with open('C://Users/cdeli/Desktop/TemperatureLog.csv', 'a', newline = '') as output_file:
-    #        csv_writer = csv.writer(output_file, delimiter = ',', quoting = csv.QUOTE_NONNUMERIC, quotechar='|')
-    #        csv_writer.writerow([float(line)])
+    def storeTemps(self, line):
+        with open("TemperatureLog.csv", 'a', newline = '') as output_file:
+            csv_writer = csv.writer(output_file, delimiter = ',')
+            csv_writer.writerow([float(line)])
 
     # DataVec comes in a [C1, G1, Tpeak, DE, DE_Time, Smax, Smax_Time, C2, G2, ... ]
     def printAndStore(self, dataVec):
@@ -1252,8 +1275,7 @@ class GenII_Interface:
             self.writeToMCU(b'END', ack=False)
             if self.isMeasuring:
                 self.startStop()
-            if self.isHeating:
-                self.startHeating()
+            self.writeToMCU(b'H0\n') # Turns off heater no matter its condition
             self.root.destroy()
 
 
