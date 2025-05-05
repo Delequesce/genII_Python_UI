@@ -237,7 +237,7 @@ class GenII_Interface:
         lbl_tempLabel.grid(row = 2, column = 0, pady = 2)
         lbl_currentTemp.grid(row = 2, column = 1, pady = 2)
         btn_beginMeasurement.grid(row = 3, column = 0, columnspan=2, pady=2)
-        btn_loadData.grid(row=4, column = 0, columnspan=2, pady=2)
+        #btn_loadData.grid(row=4, column = 0, columnspan=2, pady=2)
         btn_back.grid(row = 5, column = 0, columnspan=2, pady=2)
         btn_results.grid(row = 6, column = 0, columnspan=2, pady = 2)
 
@@ -653,7 +653,9 @@ class GenII_Interface:
             decoded_message = self.decodeMessage(message, ignoreErrors = False, split = False)
             if decoded_message:
                 print(decoded_message)
-                tk.messagebox.showwarning(title="Battery Warning", message=f"Battery Level at {self.BATTERYLEVELS[int(decoded_message)]}%")
+                batteryLevel = self.BATTERYLEVELS[int(decoded_message)]
+                if batteryLevel < 60:
+                    tk.messagebox.showwarning(title="Battery Warning", message=f"Battery Level at {batteryLevel}%")
             return
         
         if controlChar == 67:
@@ -687,7 +689,7 @@ class GenII_Interface:
         if controlChar == 84:
             #print("Temperature")
             decoded_message = self.decodeMessage(message, ignoreErrors = False, split = False)
-            self.storeTemps(decoded_message[0:-4]) # Optional for logging
+            #self.storeTemps(decoded_message[0:-4]) # Optional for logging
             self.str_currentTemp.set(decoded_message[0:-4]) #Increase number to reduce how many decimals are printed
             
             # Create moving average to see when temperature becomes stable (if last X measurements were within Y degrees of each other)
@@ -755,7 +757,7 @@ class GenII_Interface:
 
         invalid = 0
         self.filePath = self.str_filePath.get()
-        self.plotRange = np.array([149, 151])
+        self.plotRange = np.array([300, 0])
 
         # Cancel Any previously ongoing test on MCU End
         if not self.writeToMCU(b'X\n'):
@@ -764,6 +766,10 @@ class GenII_Interface:
         # Copy template file and write basic data
         template_file = None
         if self.filePath:
+            if os.path.isfile(self.filePath):
+                if not tk.messagebox.askokcancel(title="File Overwrite Warning", message="Specified file path already exists. Are you sure you want to overwrite?"):
+                    return
+
             try:
                 template_file = open("DataFileTemplate.csv")
             except FileNotFoundError as e:
@@ -1272,10 +1278,10 @@ class GenII_Interface:
 
     def on_close(self):
          if tk.messagebox.askokcancel("Quit", "Do you want to quit the program?"):
-            self.writeToMCU(b'END', ack=False)
+            self.writeToMCU(b'H0\n') # Turns off heater no matter its condition
             if self.isMeasuring:
                 self.startStop()
-            self.writeToMCU(b'H0\n') # Turns off heater no matter its condition
+            self.writeToMCU(b'END', ack=False)
             self.root.destroy()
 
 
