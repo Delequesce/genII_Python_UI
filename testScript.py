@@ -13,7 +13,7 @@ class TestingScript:
         self.root.maxsize(480,272)
         IOSLEEPTIME = 500
         ERR_IOSLEEPTIME = 200
-        self.app = GenII_Interface(self.root, use_mq=False) # Create Main Application Object
+        self.app = GenII_Interface(self.root, use_mq=False, device_present=False) # Create Main Application Object
     
     # Basic things that should be run for most tests
     def setUp(self):

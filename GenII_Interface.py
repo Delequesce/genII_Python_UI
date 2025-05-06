@@ -26,7 +26,7 @@ class GenII_Interface:
     DATAVECSIZE = 28
     BATTERYLEVELS = [100, 75, 50, 25, 0]
 
-    def __init__(self, root, use_mq = True):
+    def __init__(self, root, use_mq = True, device_present = True):
 
         self.root = root
         self.deviceStatus = tk.StringVar()
@@ -106,6 +106,10 @@ class GenII_Interface:
 
         #self.batteryUpdate("2")
         #Connect to Device
+        if not device_present:
+            self.batteryUpdate("2")
+            return
+        
         if self.connectToDevice() < 0:
             return
 
@@ -124,7 +128,8 @@ class GenII_Interface:
 
         # Resize the image in the given (width, height)
         img=image.resize((20, 40))
-
+        img = img.rotate(270, expand=True)
+        
         # Conver the image in TkImage
         return ImageTk.PhotoImage(img)
 
@@ -185,7 +190,7 @@ class GenII_Interface:
 
         # Battery Icon
         self.lbl_battery = ttk.Label(fr_main, image=self.batteryImage_100)
-        self.lbl_battery.grid(row = 4, column = 3, pady=15)
+        self.lbl_battery.grid(row = 4, column = 3, pady=15, padx = 5)
 
         # Assign variables to class
         self.cv_statusLights = cv_statusLights
