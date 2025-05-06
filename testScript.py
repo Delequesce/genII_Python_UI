@@ -19,6 +19,9 @@ class TestingScript:
     def setUp(self):
         pass
         
+    def observeInterface(self):
+        self.app.root.mainloop()
+        return
 
     def test_finishTest(self):
 
@@ -57,7 +60,8 @@ class TestingScript:
 
 if __name__ == "__main__":
     testObj = TestingScript()
-    testObj.setUp()
+    testObj.observeInterface()
+    #testObj.setUp()
     #testObj.test_finishTest()
-    testObj.test_fullMeasurement()
-    testObj.app.root.destroy()
+    #testObj.test_fullMeasurement()
+    #testObj.app.root.destroy()

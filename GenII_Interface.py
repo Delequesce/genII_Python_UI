@@ -2,6 +2,7 @@ from matplotlib.figure import Figure
 from RingBuffer import *
 from BlitManager import *
 import tkinter as tk
+from PIL import Image, ImageTk
 import tkinter.ttk as ttk
 import numpy as np
 import time, csv, serial, sys, glob
@@ -39,6 +40,7 @@ class GenII_Interface:
         self.plot1 = None
 
         # Variables for labels and entries
+        self.batteryImage_var = ImageTk.PhotoImage(Image.open("BatteryIcon_100.png"))
         self.str_filePath = tk.StringVar()
         self.str_runT = tk.StringVar(value = "1800")
         self.str_incTemp = tk.StringVar(value = "37")
@@ -54,6 +56,12 @@ class GenII_Interface:
 
         self.timerVar = tk.StringVar()
         self.timerVar.set('')
+
+        # Load Battery Icons
+        self.batteryImage_100 = self.imageLoadResize("BatteryIcon_100.png")
+        self.batteryImage_75 = self.imageLoadResize("BatteryIcon_75.png")
+        self.batteryImage_50 = self.imageLoadResize("BatteryIcon_50.png")
+        self.batteryImage_25 = self.imageLoadResize("BatteryIcon_25.png")
 
         # Tasks
         self.mq_task = None
@@ -95,8 +103,29 @@ class GenII_Interface:
         if use_mq:
             self.setupMQ()
 
+        #self.batteryUpdate("2")
+        #Connect to Device
+        if self.connectToDevice() < 0:
+            return
+
+        # Request Battery Level
+        # Send request to MCU
+        if not self.writeToMCU(b'R\n', ack=False):
+            print("Failed to read battery level from device")
+            return 
+
         # Remove Heater
         #self.writeToMCU(b'H0\n', mqTask=False)
+
+    def imageLoadResize(self, filepath):
+        # Load the image
+        image=Image.open(filepath)
+
+        # Resize the image in the given (width, height)
+        img=image.resize((20, 40))
+
+        # Conver the image in TkImage
+        return ImageTk.PhotoImage(img)
 
     def createTopWindow(self, root):
         #root.minsize(root.winfo_width(), root.winfo_height())
@@ -152,7 +181,10 @@ class GenII_Interface:
         lbl_eqcStatus.grid(row = 1, column = 2, padx = 0, pady = 5)
         lbl_eqcTimer.grid(row = 1, column = 3)
         lbl_calibStatus.grid(row = 2, column = 2, padx = 0, pady = 5)
-        
+
+        # Battery Icon
+        self.lbl_battery = ttk.Label(fr_main, image=self.batteryImage_100)
+        self.lbl_battery.grid(row = 4, column = 3, pady=15)
 
         # Assign variables to class
         self.cv_statusLights = cv_statusLights
@@ -163,7 +195,7 @@ class GenII_Interface:
 
     def createParamWindow(self, root):
         # Frames and canvases
-        fr_params = ttk.Frame(root);
+        fr_params = ttk.Frame(root)
         fr_channels = ttk.Frame(fr_params)
         #fr_params.pack()
         fr_channels.grid(row = 2, column = 1)
@@ -373,6 +405,32 @@ class GenII_Interface:
 
         return
     
+
+    def batteryUpdate(self, decoded_message):
+
+        batteryLevel = self.BATTERYLEVELS[int(decoded_message)]
+
+        if batteryLevel > 75:
+            #print("Battery Level 100")
+            self.lbl_battery.config(image = self.batteryImage_100)
+            return
+        
+        if batteryLevel > 50:
+            #print("Battery Level 75")
+            self.lbl_battery.config(image = self.batteryImage_75)
+            return
+        
+        if batteryLevel > 25:
+            #print("Battery Level 50")
+            self.lbl_battery.config(image = self.batteryImage_50)
+            return
+
+        #print("Battery Level 25")
+        self.lbl_battery.config(image = self.batteryImage_25)
+        tk.messagebox.showwarning(title="Battery Warning", message=f"Battery Level at 25%")
+
+        return
+
     # Function to connect to message queues
     def setupMQ(self):
 
@@ -439,7 +497,7 @@ class GenII_Interface:
         if not self.writeToMCU(b'C\n'):
             print("Failed to Connect to Device")
             self.cv_statusLights.itemconfig(self.light_connect, fill="red")
-            return 
+            return -1
 
         # Update UI with connection status
         self.deviceStatus.set("Device Successfully Connected")
@@ -449,7 +507,7 @@ class GenII_Interface:
         #self.handle_signal(0, 0)
         print("Successfully Connected")
 
-        return
+        return 0
     
     # Sends a command to the MCU through the UART Handler
     def writeToMCU(self, message, ack = True, mqTask = True):
@@ -653,9 +711,8 @@ class GenII_Interface:
             decoded_message = self.decodeMessage(message, ignoreErrors = False, split = False)
             if decoded_message:
                 print(decoded_message)
-                batteryLevel = self.BATTERYLEVELS[int(decoded_message)]
-                if batteryLevel < 60:
-                    tk.messagebox.showwarning(title="Battery Warning", message=f"Battery Level at {batteryLevel}%")
+                self.batteryUpdate(decoded_message)
+                
             return
         
         if controlChar == 67:
