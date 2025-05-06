@@ -15,7 +15,7 @@ class UART_Manager:
     MY_SIGNAL = signal.SIGUSR1
     GENIIPORT = "/dev/serial0" # For main system using Raspberry Pi
     #GENIIPORT = "/dev/ttyACM0" # This is for my cpu acting in place of the pi for testing
-    MCUCODES = bytearray("BCDEQTXZ", 'ascii')
+    MCUCODES = bytearray("BCDEKQTVXZ", 'ascii')
     IOSLEEPTIME = 0.1 # In sec
     DEFAULT_WRITE_ATTEMPTS = 2
     DEFAULT_MESSAGE_READ = 3
@@ -23,8 +23,10 @@ class UART_Manager:
     # - C: Calibration Data
     # - D: Regular Impedance Data
     # - E: Error/General Messages
+    # - K: Ack
     # - Q: EQC Data
     # - T: Temperature Measurements
+    # - V: Nack
     # - X: Measurement stop
     # - Z: Messages to bypass UI
 

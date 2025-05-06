@@ -62,6 +62,7 @@ class GenII_Interface:
         self.batteryImage_75 = self.imageLoadResize("BatteryIcon_75.png")
         self.batteryImage_50 = self.imageLoadResize("BatteryIcon_50.png")
         self.batteryImage_25 = self.imageLoadResize("BatteryIcon_25.png")
+        self.batteryLevel = 100
 
         # Tasks
         self.mq_task = None
@@ -110,7 +111,7 @@ class GenII_Interface:
 
         # Request Battery Level
         # Send request to MCU
-        if not self.writeToMCU(b'R\n', ack=False):
+        if not self.writeToMCU(b'R\n'):
             print("Failed to read battery level from device")
             return 
 
@@ -408,26 +409,29 @@ class GenII_Interface:
 
     def batteryUpdate(self, decoded_message):
 
-        batteryLevel = self.BATTERYLEVELS[int(decoded_message)]
+        currentLevel = self.batteryLevel
 
-        if batteryLevel > 75:
+        self.batteryLevel = self.BATTERYLEVELS[int(decoded_message)]
+
+        if self.batteryLevel > 75:
             #print("Battery Level 100")
             self.lbl_battery.config(image = self.batteryImage_100)
             return
         
-        if batteryLevel > 50:
+        if self.batteryLevel > 50:
             #print("Battery Level 75")
             self.lbl_battery.config(image = self.batteryImage_75)
             return
         
-        if batteryLevel > 25:
+        if self.batteryLevel > 25:
             #print("Battery Level 50")
             self.lbl_battery.config(image = self.batteryImage_50)
             return
 
-        #print("Battery Level 25")
+        # Only alert user if battery level has fallen to this level, not continously even while charging
         self.lbl_battery.config(image = self.batteryImage_25)
-        tk.messagebox.showwarning(title="Battery Warning", message=f"Battery Level at 25%")
+        if currentLevel > 25:
+            tk.messagebox.showwarning(title="Battery Warning", message=f"Battery Level at 25%")
 
         return
 
@@ -693,13 +697,15 @@ class GenII_Interface:
     
     ### Takes messages from UART handler and decides what to do with them
     # List of Control Characters:
-    # - B = 66: Battery Level
-    # - C = 67: Calibration Data
-    # - D = 68: Regular Impedance Data
-    # - E = 69: Error/General Messages
-    # - Q = 81: EQC Data
-    # - T = 84: Temperature Measurements
-    # - X = 88: Measurement stop
+    # - B: Battery Level
+    # - C: Calibration Data
+    # - D: Regular Impedance Data
+    # - E: Error/General Messages
+    # - K: Ack
+    # - Q: EQC Data
+    # - T: Temperature Measurements
+    # - V: Nack
+    # - X: Measurement stop
 
     def processInputs(self, message):
         #print("Processing Inputs")
@@ -755,7 +761,9 @@ class GenII_Interface:
             #    if np.std(self.tempArray.data) < self.tempStabilityThreshold:
             #        self.str_heaterStatus.set(self.heaterStatus[2])
             return
-        
+        if controlChar ==  86:
+            print("MCU Didn't recognize command")
+            return
         if controlChar == 88:
             print("Finishing Test")
             self.finishTest()
