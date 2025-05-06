@@ -251,10 +251,11 @@ class UART_Manager:
             # For commands that don't need UI involvement
             if message[0] == 90:
                 if message[0:3] == b'ZZZ':
+                    os.system('notify-send -u critical "System Shutdown imminent"')
                     # Clean up serial port and message queues. Also lets MCU know that command was succesfully received
                     self.on_exit()
                     print("Shutdown System Commanded")
-                    os.system(["sudo shutdown -h now"])
+                    os.system("sudo shutdown -h now")
                 else: 
                     print(message)
                 continue
