@@ -10,7 +10,7 @@ import os
 class UART_Manager:
 
     # Constants
-    QUEUE_NAME_UAUI = "/uart_ui_message_queue"
+    QUEUE_NAME_UAUI = "/uart_ui_message_queue" # These are stored in /dev/mqueue
     QUEUE_NAME_UIUA = "/ui_uart_message_queue"
     MY_SIGNAL = signal.SIGUSR1
     GENIIPORT = "/dev/serial0" # For main system using Raspberry Pi
