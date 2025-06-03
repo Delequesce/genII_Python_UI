@@ -115,9 +115,9 @@ class GenII_Interface:
 
         # Request Battery Level
         # Send request to MCU
-        if not self.writeToMCU(b'R\n'):
-            print("Failed to read battery level from device")
-            return 
+        #if not self.writeToMCU(b'R\n'):
+        #    print("Failed to read battery level from device")
+        #    return 
 
         # Remove Heater
         #self.writeToMCU(b'H0\n', mqTask=False)
@@ -756,9 +756,10 @@ class GenII_Interface:
         
         if controlChar == 84:
             #print("Temperature")
-            decoded_message = self.decodeMessage(message, ignoreErrors = False, split = False)
-            #self.storeTemps(decoded_message[0:-4]) # Optional for logging
-            self.str_currentTemp.set(decoded_message[0:-4]) #Increase number to reduce how many decimals are printed
+            dataVec = self.decodeMessage(message, ignoreErrors = False, split = True)
+            temperatureData = dataVec[0]
+            self.storeTemps(dataVec) # Optional for logging
+            self.str_currentTemp.set(temperatureData[0:-4]) #Increase number to reduce how many decimals are printed
             
             # Create moving average to see when temperature becomes stable (if last X measurements were within Y degrees of each other)
             #if self.isHeating and len(self.tempArray.data) == self.TEMPARRAYSIZE:
@@ -987,7 +988,7 @@ class GenII_Interface:
     def storeTemps(self, line):
         with open("TemperatureLog.csv", 'a', newline = '') as output_file:
             csv_writer = csv.writer(output_file, delimiter = ',')
-            csv_writer.writerow([float(line)])
+            csv_writer.writerow(line)
 
     # DataVec comes in a [C1, G1, Tpeak, DE, DE_Time, Smax, Smax_Time, C2, G2, ... ]
     def printAndStore(self, dataVec):
