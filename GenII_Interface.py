@@ -23,7 +23,7 @@ class GenII_Interface:
     QUEUE_NAME_UIUA = "/ui_uart_message_queue"
     #MY_SIGNAL = signal.SIGUSR2
     TEMPARRAYSIZE = 60
-    DATAVECSIZE = 28
+    DATAVECSIZE = 8
     BATTERYLEVELS = [100, 75, 50, 25, 0]
 
     def __init__(self, root, use_mq = True, device_present = True):
@@ -758,7 +758,7 @@ class GenII_Interface:
             #print("Temperature")
             dataVec = self.decodeMessage(message, ignoreErrors = False, split = True)
             temperatureData = dataVec[0]
-            self.storeTemps(dataVec) # Optional for logging
+            #self.storeTemps(dataVec) # Optional for logging
             self.str_currentTemp.set(temperatureData[0:-4]) #Increase number to reduce how many decimals are printed
             
             # Create moving average to see when temperature becomes stable (if last X measurements were within Y degrees of each other)
@@ -992,7 +992,6 @@ class GenII_Interface:
 
     # DataVec comes in a [C1, G1, Tpeak, DE, DE_Time, Smax, Smax_Time, C2, G2, ... ]
     def printAndStore(self, dataVec):
-
         # Use to calculate time in between each collection
         #currTime = time.perf_counter()
         #print(currTime - self.prevTime)
@@ -1071,10 +1070,10 @@ class GenII_Interface:
 
         # Set Output params if different/time
 
-        for chan in self.channelList:
-            self.str_tpeak_est[chan].set(dataVec[7*chan+2])
-            self.str_deltaEps_est[chan].set(dataVec[7*chan+3])
-            self.str_smax_est[chan].set(dataVec[7*chan+5])
+        # for chan in self.channelList:
+        #     self.str_tpeak_est[chan].set(dataVec[7*chan+2])
+        #     self.str_deltaEps_est[chan].set(dataVec[7*chan+3])
+        #     self.str_smax_est[chan].set(dataVec[7*chan+5])
 
         #time_elapsed = time.perf_counter() - start_time
         #print(f"time_elapsed: {time_elapsed:0.3f}")
