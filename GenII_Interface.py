@@ -66,6 +66,7 @@ class GenII_Interface:
 
         # Tasks
         self.mq_task = None
+        self.stopWatchTask = None
 
         # Frames
         self.frameList.append(self.createTopWindow(root)) # Create a top window element for root instance
@@ -256,6 +257,11 @@ class GenII_Interface:
         self.heaterStatus = ["Heater Off", "Heating System", "Stable Temperature Achieved", "Heater Start Error", "Heater Stop Error"]
 
         # Components
+        self.stopWatchVar = tk.StringVar()
+        self.stopWatchVar.set('0')
+        self.lbl_stopWatch = ttk.Label(self.fr_leftInfo, textvariable=self.stopWatchVar)
+        self.stopWatchBtn_text = tk.StringVar(value = "Start Stopwatch")
+        btn_startStopWatch = ttk.Button(self.fr_leftInfo, textvariable=self.stopWatchBtn_text, style="AccentButton",command=self.startStopWatch)
         self.heatBtn_text = tk.StringVar(value = self.heatBtnText[0])
         btn_startHeating = ttk.Button(self.fr_leftInfo, textvariable = self.heatBtn_text, style = "AccentButton", command = self.startHeating)
         self.btn_text = tk.StringVar(value = self.measBtnText[0])
@@ -270,14 +276,16 @@ class GenII_Interface:
         
         # Layout Grid
         self.fr_leftInfo.grid(row = 0, column = 0)
-        btn_startHeating.grid(row = 0, column = 0, columnspan=2, pady = 2)
-        lbl_heaterStatus.grid(row = 1, column = 0, columnspan= 2, pady = 2)
-        lbl_tempLabel.grid(row = 2, column = 0, pady = 2)
-        lbl_currentTemp.grid(row = 2, column = 1, pady = 2)
-        btn_beginMeasurement.grid(row = 3, column = 0, columnspan=2, pady=2)
+        btn_startStopWatch.grid(row = 0, column = 0, columnspan=2, pady = 2)
+        self.lbl_stopWatch.grid(row = 0, column = 2, pady = 2)
+        btn_startHeating.grid(row = 1, column = 0, columnspan=2, pady = 2)
+        lbl_heaterStatus.grid(row = 2, column = 0, columnspan= 2, pady = 2)
+        lbl_tempLabel.grid(row = 3, column = 0, pady = 2)
+        lbl_currentTemp.grid(row = 3, column = 1, pady = 2)
+        btn_beginMeasurement.grid(row = 4, column = 0, columnspan=2, pady=2)
         #btn_loadData.grid(row=4, column = 0, columnspan=2, pady=2)
-        btn_back.grid(row = 5, column = 0, columnspan=2, pady=2)
-        btn_results.grid(row = 6, column = 0, columnspan=2, pady = 2)
+        btn_back.grid(row = 6, column = 0, columnspan=2, pady=2)
+        btn_results.grid(row = 7, column = 0, columnspan=2, pady = 2)
 
         # Plot
         self.fig = Figure(figsize = (3, 3), dpi = 100)
@@ -675,6 +683,28 @@ class GenII_Interface:
         self.eqcStatus.set("EQC Passed")
         return
     
+    def startStopWatch(self):
+        #print(self.stopWatchBtn_text.get())
+        if self.stopWatchBtn_text.get() == "Start Stopwatch":
+            self.stopWatchTask = self.root.after(1000, lambda: self.updateStopWatch(0))
+            self.stopWatchBtn_text.set("Stop Stopwatch")
+        else:
+            self.root.after_cancel(self.stopWatchTask)
+            self.stopWatchBtn_text.set("Start Stopwatch")
+            self.stopWatchVar.set('0')
+        return
+    
+
+    def updateStopWatch(self, time):
+            
+            # Update Time
+            time+=1
+            # Set label
+            self.stopWatchVar.set(str(time))
+            # Call method every second
+            self.stopWatchTask = self.root.after(1000, lambda: self.updateStopWatch(time))
+            return
+
     def startHeating(self):
 
         # Status is Idle -> Heating -> Stable
