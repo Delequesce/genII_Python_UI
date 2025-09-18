@@ -38,11 +38,13 @@ class GenII_Interface:
         self.frameList = []
         self.frame_ctr = -1
         self.plot1 = None
+        self.collectionInterval = 1
 
         # Variables for labels and entries
         self.batteryImage_var = ImageTk.PhotoImage(Image.open("BatteryIcon_100.png"))
         self.str_filePath = tk.StringVar()
         self.str_runT = tk.StringVar(value = "1800")
+        self.str_collectInt = tk.StringVar(value = "1")
         self.str_incTemp = tk.StringVar(value = "37")
         self.str_currentTemp = tk.StringVar(value= "N/A")
         self.str_heaterStatus = tk.StringVar(value="Heater Off")
@@ -66,7 +68,6 @@ class GenII_Interface:
 
         # Tasks
         self.mq_task = None
-        self.stopWatchTask = None
 
         # Frames
         self.frameList.append(self.createTopWindow(root)) # Create a top window element for root instance
@@ -116,9 +117,9 @@ class GenII_Interface:
 
         # Request Battery Level
         # Send request to MCU
-        if not self.writeToMCU(b'R\n'):
-            print("Failed to read battery level from device")
-            return 
+        #if not self.writeToMCU(b'R\n'):
+        #    print("Failed to read battery level from device")
+        #    return 
 
         # Remove Heater
         #self.writeToMCU(b'H0\n', mqTask=False)
@@ -205,27 +206,33 @@ class GenII_Interface:
         fr_params = ttk.Frame(root)
         fr_channels = ttk.Frame(fr_params)
         #fr_params.pack()
-        fr_channels.grid(row = 2, column = 1)
+        fr_channels.grid(row = 3, column = 1)
         fr_filePath = ttk.Frame(fr_params)
-        fr_filePath.grid(row = 3, column = 1, columnspan = 2)
+        fr_filePath.grid(row = 4, column = 1, columnspan = 2)
 
         # Labels
         lbl_runTime = ttk.Label(fr_params, text = "Run Time (sec)")
+        lbl_collectInt = ttk.Label(fr_params, text = "Collection Interval (sec)")
+
         lbl_incTemp = ttk.Label(fr_params, text = "Incubation\nTemperature (C)")
         lbl_channels = ttk.Label(fr_params, text = "Active Channels")
         lbl_fpath = ttk.Label(fr_params, text= "Filepath")
         lbl_runTime.grid(row = 0, column = 0, padx = 0, pady = 5)
         lbl_incTemp.grid(row = 1, column = 0, padx = 0, pady = 5)
-        lbl_channels.grid(row = 2, column = 0, padx = 0, pady = 5)
-        lbl_fpath.grid(row = 3, column = 0, padx = 0, pady = 5)
+        lbl_collectInt.grid(row = 2, column=0, padx = 0, pady = 5)
+        lbl_channels.grid(row = 3, column = 0, padx = 0, pady = 5)
+        lbl_fpath.grid(row = 4, column = 0, padx = 0, pady = 5)
 
         # Entry Boxes
         
         ent_runTime = ttk.Entry(fr_params, textvariable= self.str_runT, width = 5)
+        ent_collectInt = ttk.Entry(fr_params, textvariable = self.str_collectInt, width = 5)
+
         ent_incTemp = ttk.Entry(fr_params, textvariable= self.str_incTemp, width = 5)
         ent_filePath = ttk.Entry(fr_filePath, textvariable= self.str_filePath, width = 30)
         ent_runTime.grid(row = 0, column = 1, padx = 0, pady = 0)
         ent_incTemp.grid(row = 1, column = 1, padx = 0, pady = 0)
+        ent_collectInt.grid(row = 2, column = 1, padx = 0, pady = 0)
         ent_filePath.grid(row = 0, column = 1, columnspan = 2, pady = 0)
         #ent_filePath.bind("<1>", self.openSaveDialog) # Will launch when entry box is left-clicked
 
@@ -257,11 +264,6 @@ class GenII_Interface:
         self.heaterStatus = ["Heater Off", "Heating System", "Stable Temperature Achieved", "Heater Start Error", "Heater Stop Error"]
 
         # Components
-        self.stopWatchVar = tk.StringVar()
-        self.stopWatchVar.set('0')
-        self.lbl_stopWatch = ttk.Label(self.fr_leftInfo, textvariable=self.stopWatchVar)
-        self.stopWatchBtn_text = tk.StringVar(value = "Start Stopwatch")
-        btn_startStopWatch = ttk.Button(self.fr_leftInfo, textvariable=self.stopWatchBtn_text, style="AccentButton",command=self.startStopWatch)
         self.heatBtn_text = tk.StringVar(value = self.heatBtnText[0])
         btn_startHeating = ttk.Button(self.fr_leftInfo, textvariable = self.heatBtn_text, style = "AccentButton", command = self.startHeating)
         self.btn_text = tk.StringVar(value = self.measBtnText[0])
@@ -276,16 +278,14 @@ class GenII_Interface:
         
         # Layout Grid
         self.fr_leftInfo.grid(row = 0, column = 0)
-        btn_startStopWatch.grid(row = 0, column = 0, columnspan=2, pady = 2)
-        self.lbl_stopWatch.grid(row = 0, column = 2, pady = 2)
-        btn_startHeating.grid(row = 1, column = 0, columnspan=2, pady = 2)
-        lbl_heaterStatus.grid(row = 2, column = 0, columnspan= 2, pady = 2)
-        lbl_tempLabel.grid(row = 3, column = 0, pady = 2)
-        lbl_currentTemp.grid(row = 3, column = 1, pady = 2)
-        btn_beginMeasurement.grid(row = 4, column = 0, columnspan=2, pady=2)
+        btn_startHeating.grid(row = 0, column = 0, columnspan=2, pady = 2)
+        lbl_heaterStatus.grid(row = 1, column = 0, columnspan= 2, pady = 2)
+        lbl_tempLabel.grid(row = 2, column = 0, pady = 2)
+        lbl_currentTemp.grid(row = 2, column = 1, pady = 2)
+        btn_beginMeasurement.grid(row = 3, column = 0, columnspan=2, pady=2)
         #btn_loadData.grid(row=4, column = 0, columnspan=2, pady=2)
-        btn_back.grid(row = 6, column = 0, columnspan=2, pady=2)
-        btn_results.grid(row = 7, column = 0, columnspan=2, pady = 2)
+        btn_back.grid(row = 5, column = 0, columnspan=2, pady=2)
+        btn_results.grid(row = 6, column = 0, columnspan=2, pady = 2)
 
         # Plot
         self.fig = Figure(figsize = (3, 3), dpi = 100)
@@ -683,28 +683,6 @@ class GenII_Interface:
         self.eqcStatus.set("EQC Passed")
         return
     
-    def startStopWatch(self):
-        #print(self.stopWatchBtn_text.get())
-        if self.stopWatchBtn_text.get() == "Start Stopwatch":
-            self.stopWatchTask = self.root.after(1000, lambda: self.updateStopWatch(0))
-            self.stopWatchBtn_text.set("Stop Stopwatch")
-        else:
-            self.root.after_cancel(self.stopWatchTask)
-            self.stopWatchBtn_text.set("Start Stopwatch")
-            self.stopWatchVar.set('0')
-        return
-    
-
-    def updateStopWatch(self, time):
-            
-            # Update Time
-            time+=1
-            # Set label
-            self.stopWatchVar.set(str(time))
-            # Call method every second
-            self.stopWatchTask = self.root.after(1000, lambda: self.updateStopWatch(time))
-            return
-
     def startHeating(self):
 
         # Status is Idle -> Heating -> Stable
@@ -786,9 +764,10 @@ class GenII_Interface:
         
         if controlChar == 84:
             #print("Temperature")
-            decoded_message = self.decodeMessage(message, ignoreErrors = False, split = False)
-            #self.storeTemps(decoded_message[0:-4]) # Optional for logging
-            self.str_currentTemp.set(decoded_message[0:-4]) #Increase number to reduce how many decimals are printed
+            dataVec = self.decodeMessage(message, ignoreErrors = False, split = True)
+            temperatureData = dataVec[0]
+            self.storeTemps(dataVec) # Optional for logging
+            self.str_currentTemp.set(temperatureData[0:-4]) #Increase number to reduce how many decimals are printed
             
             # Create moving average to see when temperature becomes stable (if last X measurements were within Y degrees of each other)
             #if self.isHeating and len(self.tempArray.data) == self.TEMPARRAYSIZE:
@@ -902,7 +881,8 @@ class GenII_Interface:
         runT = self.str_runT.get()
         intrunT = int(runT)
         N_bytes_1 = len(runT)
-        collectionInterval = '1'
+        collectionInterval = self.str_collectInt.get()
+        self.collectionInterval = int(collectionInterval)
         N_bytes_2 = len(collectionInterval)
         incTemp = self.str_incTemp.get()
         N_bytes_3 = len(incTemp)
@@ -1017,7 +997,7 @@ class GenII_Interface:
     def storeTemps(self, line):
         with open("TemperatureLog.csv", 'a', newline = '') as output_file:
             csv_writer = csv.writer(output_file, delimiter = ',')
-            csv_writer.writerow([float(line)])
+            csv_writer.writerow(line)
 
     # DataVec comes in a [C1, G1, Tpeak, DE, DE_Time, Smax, Smax_Time, C2, G2, ... ]
     def printAndStore(self, dataVec):
@@ -1061,7 +1041,7 @@ class GenII_Interface:
             self.DataMat[i-1, chan] = CVec[chan]
             self.DataMat[i-1, chan+4] = GVec[chan]
             l = self.lines[chan]
-            l.set_xdata(self.countData)
+            l.set_xdata(np.multiply(self.countData, self.collectionInterval))
             l.set_ydata(self.DataMat[0:i, chan])
 
         try:
@@ -1081,16 +1061,16 @@ class GenII_Interface:
             self.plotRange[1] = smallMatMax
 
         if self.csv_writer:
-            dataToWrite = np.concatenate(([np.round(i/60, 3)], smallMat))
+            dataToWrite = np.concatenate(([np.round(i/60*self.collectionInterval, 3)], smallMat))
             dataToWrite = list(map(lambda t: "%0.3f" % t, dataToWrite))
             self.csv_writer.writerow(dataToWrite)
 
-        self.plot1.set_xlim(-1, np.floor((i-1)/30 + 1) * 30)
+        self.plot1.set_xlim(-1, np.floor(self.collectionInterval*(i-1)/30 + 1) * 30)
         self.plot1.set_ylim(self.plotRange[0]-1, self.plotRange[1]+1)
         #self.plot1.set_ylim(0, 400)
 
         # Have the blitting manager update the artists
-        if self.redrawCounter > 9:
+        if self.redrawCounter > np.floor(9/self.collectionInterval):
             self.canvas.draw()
             self.redrawCounter = 0
         else:
@@ -1148,7 +1128,7 @@ class GenII_Interface:
                     break
 
                 # Normalize Data (NumPy handles divide by zero cases automatically)
-                timeVec = np.round(np.divide(self.countData , 60), decimals=3)
+                timeVec = np.round(np.divide(self.countData , 60/self.collectionInterval), decimals=3)
                 normCDataMat[:,chan] = np.round(np.divide(self.DataMat[:,chan],peakVal), decimals=3)
 
                 # Re-plot
@@ -1162,7 +1142,7 @@ class GenII_Interface:
             #     self.plot1.plot(timeVec, normCDataMat, marker = 'o', label = f"Ch {chan}", markersize = 4, fillstyle = 'full')
             #self.plot1.legend("Channel 1", "Channel 2", "Channel 3")
             self.plot1.set_xlim(-1, timeVec[-1] + 1)
-            self.plot1.set_ylim(0.7, np.max([1.01, np.max(normCDataMat)]))
+            self.plot1.set_ylim(0.7, np.nanmax([1.01, np.max(normCDataMat)]))
             self.plot1.set_xlabel("Time (min)")
             self.plot1.set_ylabel("Normalized Permittivity (real)")
             self.plot1.legend(loc='upper left', prop={'size':6})
@@ -1373,7 +1353,8 @@ class GenII_Interface:
                 self.channelList.append(i)
                 self.channelBin = self.channelBin + (1 << i)
             i+=1
-        
+        sendData = bytearray('L' + str(self.channelBin) + '\n', 'ascii')
+        self.writeToMCU(sendData, True)
         return
 
     def on_close(self):
