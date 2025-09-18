@@ -529,12 +529,12 @@ class GenII_Interface:
     # Sends a command to the MCU through the UART Handler
     def writeToMCU(self, message, ack = True, mqTask = True):
 
+        valid = 0
         if self.noSerial:
             return 1
 
-        # Send command and wait for acknowledgement from uart (create signal mask to block interrupts)
-        #signal.pthread_sigmask(signal.SIG_BLOCK, {self.MY_SIGNAL})
-        #self.mq_inbox.request_notification(None)
+        # Send command and wait for acknowledgement from uart
+        # Stop Checking Message Queue 
         if mqTask:
             self.root.after_cancel(self.mq_task)
 
@@ -542,35 +542,29 @@ class GenII_Interface:
         while self.mq_outbox.current_messages > 0:
             self.mq_outbox.receive()
 
+        # Send Message
         print("Sending Message to MCU")
         self.mq_outbox.send(message)
         
         if not ack:
             return 1
         
-        #print("Waiting for inbox")
-        temp = self.mq_inbox.current_messages
-        while temp < 1:
-            #print(temp)
-            temp = self.mq_inbox.current_messages
-            time.sleep(0.05)
+        # Wait fixed period for MCU to respond
+        time.sleep(0.5)
         
-        #print("Loop escaped")
-        response, priority = self.mq_inbox.receive()
-
-        #signal.pthread_sigmask(signal.SIG_UNBLOCK, {self.MY_SIGNAL})
-        #self.mq_inbox.request_notification(self.MY_SIGNAL)
+        # Go through each new message and see if any are acknowledges
+        while self.mq_inbox.current_messages:
+            response, priority = self.mq_inbox.receive()
+            if response == b'K':
+                print("Acknowledge Received!")
+                valid = 1
+        
+        # Re-enable mq checking after 200 msec
         if mqTask:
             self.root.after(200, self.checkMessageQueue)
-        #print("Checking response")
-        if response == b'K':
-            print("Success!")
-            return 1
-        else: 
-            print("Failure")
-            return 0
         
-        return 0
+        # Return ack state to caller
+        return valid
 
     def performCalibration(self, boardNumber):
 
@@ -753,6 +747,9 @@ class GenII_Interface:
             decoded_message = self.decodeMessage(message, ignoreErrors = False, split = False)
             if decoded_message:
                 print(decoded_message)
+            return
+        
+        if controlChar == 75:
             return
         
         if controlChar == 81:
