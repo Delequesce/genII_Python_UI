@@ -23,7 +23,7 @@ class GenII_Interface:
     QUEUE_NAME_UIUA = "/ui_uart_message_queue"
     #MY_SIGNAL = signal.SIGUSR2
     TEMPARRAYSIZE = 60
-    DATAVECSIZE = 28
+    DATAVECSIZE = 29
     BATTERYLEVELS = [100, 75, 50, 25, 0]
 
     def __init__(self, root, use_mq = True, device_present = True):
