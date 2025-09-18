@@ -88,6 +88,7 @@ class GenII_Interface:
         self.redrawCounter = 10
         self.channelBin = 0
         self.DataMat = []
+        self.timeVec = []
         self.prevTime = 0
         self.oldDataVec = np.zeros(self.DATAVECSIZE)
         self.output_file = None
@@ -114,6 +115,9 @@ class GenII_Interface:
         
         if self.connectToDevice() < 0:
             return
+
+        if not self.channelAdjust:
+            print("Channels may not be properly adjusted, please configure manually")
 
         # Request Battery Level
         # Send request to MCU
@@ -457,37 +461,11 @@ class GenII_Interface:
         # Flush inbox
         while self.mq_inbox.current_messages > 0:
             self.mq_inbox.receive()
-
-        # Request notifications for queue from ui
-        #self.mq_inbox.request_notification(self.MY_SIGNAL)
-
-        # Register my signal handler
-        #signal.signal(self.MY_SIGNAL, self.handle_signal)
         
         # Set up loop to check message queues
         self.mq_task = self.root.after(200, self.checkMessageQueue)
 
         return
-
-    # Callback function for handling the specified user signal
-    # def handle_signal(self, signal_number, stack_frame):
-    #     numMess = self.mq_inbox.current_messages
-    #     while numMess > 0: 
-    #         #print("Remaining Messages: %d" % numMess)
-    #         message, priority = self.mq_inbox.receive()
-    #         # RECEIVED MESSAGES ARE IN BYTE FORMAT
-    #         #message = message.decode('ascii')
-            
-
-    #         #print("Message received: %s" % (message))
-
-    #         # Act on command (PROCESS INPUTS
-    #         self.processInputs(message)
-    #         numMess = self.mq_inbox.current_messages
-        
-    #     # Re-register for notifications
-    #     self.mq_inbox.request_notification(self.MY_SIGNAL)
-    #     return
 
     # Checks the message queue and handles all of the awaiting messages
     def checkMessageQueue(self):
@@ -737,12 +715,14 @@ class GenII_Interface:
             # Ideally breaks into self.DATAVECSIZE element list (28 as of 4/15/25)
             dataVec = self.decodeMessage(message, ignoreErrors = False, split = True)
             if len(dataVec) < self.DATAVECSIZE:
-                dataVec = self.oldDataVec
+                # Data is invalid, ignore
+                #dataVec = self.oldDataVec
+                return
 
-            #print(dataVec)
             self.printAndStore(dataVec)
             self.oldDataVec = dataVec
             return
+        
         if controlChar == 69:
             decoded_message = self.decodeMessage(message, ignoreErrors = False, split = False)
             if decoded_message:
@@ -750,6 +730,7 @@ class GenII_Interface:
             return
         
         if controlChar == 75:
+            print("Uncaught Acknowledge")
             return
         
         if controlChar == 81:
@@ -996,26 +977,22 @@ class GenII_Interface:
             csv_writer = csv.writer(output_file, delimiter = ',')
             csv_writer.writerow(line)
 
-    # DataVec comes in a [C1, G1, Tpeak, DE, DE_Time, Smax, Smax_Time, C2, G2, ... ]
+    # DataVec format: [Timestamp, C1, G1, Tpeak, DE, DE_Time, Smax, Smax_Time, C2, G2, ... ]
     def printAndStore(self, dataVec):
 
-        # Use to calculate time in between each collection
-        #currTime = time.perf_counter()
-        #print(currTime - self.prevTime)
-        #self.prevTime = currTime
         # Get current count
         self.countData.append(len(self.countData) + 1)
         i = self.countData[-1]
 
         #print(f"Data Point {i}, Data Vector: {dataVec}")
         useOldData = False
-        
+
         # Process Data Vector
         CVec = []
         GVec = []
 
         try:
-            for C, G in zip(dataVec[0::7], dataVec[1::7]):
+            for C, G in zip(dataVec[1::7], dataVec[2::7]):
                 CVec.append(float(C[:-1]))
                 GVec.append(float(G[:-1]))
 
@@ -1026,7 +1003,7 @@ class GenII_Interface:
         
         if useOldData:
             try:
-                for C, G in zip(self.oldDataVec[0::7], self.oldDataVec[1::7]):
+                for C, G in zip(self.oldDataVec[1::7], self.oldDataVec[2::7]):
                     CVec.append(float(C[:-1]))
                     GVec.append(float(G[:-1]))
             except Exception as e:
@@ -1034,11 +1011,12 @@ class GenII_Interface:
                 print(self.oldDataVec)
                 return
 
+        self.timeVec[i-1] = float(dataVec[0])
         for chan in self.channelList:
             self.DataMat[i-1, chan] = CVec[chan]
             self.DataMat[i-1, chan+4] = GVec[chan]
             l = self.lines[chan]
-            l.set_xdata(np.multiply(self.countData, self.collectionInterval))
+            l.set_xdata(self.timeVec[0:i])
             l.set_ydata(self.DataMat[0:i, chan])
 
         try:
@@ -1050,19 +1028,18 @@ class GenII_Interface:
         smallMat = self.DataMat[i-1]
         if smallMat.size == 0:
             return
-        smallMatMin= np.min(smallMat[self.channelList])
-        smallMatMax= np.max(smallMat[self.channelList])
+        smallMatMin= np.min(smallMat[self.channelList+1])
+        smallMatMax= np.max(smallMat[self.channelList+1])
         if smallMatMin < self.plotRange[0]:
             self.plotRange[0] = smallMatMin
         if smallMatMax > self.plotRange[1]:
             self.plotRange[1] = smallMatMax
 
         if self.csv_writer:
-            dataToWrite = np.concatenate(([np.round(i/60*self.collectionInterval, 3)], smallMat))
-            dataToWrite = list(map(lambda t: "%0.3f" % t, dataToWrite))
+            dataToWrite = list(map(lambda t: "%0.3f" % t, smallMat))
             self.csv_writer.writerow(dataToWrite)
 
-        self.plot1.set_xlim(-1, np.floor(self.collectionInterval*(i-1)/30 + 1) * 30)
+        self.plot1.set_xlim(-1, np.floor(self.timeVec[-1]/30 + 1) * 30)
         self.plot1.set_ylim(self.plotRange[0]-1, self.plotRange[1]+1)
         #self.plot1.set_ylim(0, 400)
 
@@ -1078,9 +1055,9 @@ class GenII_Interface:
         # Set Output params if different/time
 
         for chan in self.channelList:
-            self.str_tpeak_est[chan].set(dataVec[7*chan+2])
-            self.str_deltaEps_est[chan].set(dataVec[7*chan+3])
-            self.str_smax_est[chan].set(dataVec[7*chan+5])
+            self.str_tpeak_est[chan].set(dataVec[7*chan+3])
+            self.str_deltaEps_est[chan].set(dataVec[7*chan+4])
+            self.str_smax_est[chan].set(dataVec[7*chan+6])
 
         #time_elapsed = time.perf_counter() - start_time
         #print(f"time_elapsed: {time_elapsed:0.3f}")
@@ -1125,12 +1102,12 @@ class GenII_Interface:
                     break
 
                 # Normalize Data (NumPy handles divide by zero cases automatically)
-                timeVec = np.round(np.divide(self.countData , 60/self.collectionInterval), decimals=3)
+                timeVecMinutes = np.round(np.divide(self.timeVec , 60), decimals=3)
                 normCDataMat[:,chan] = np.round(np.divide(self.DataMat[:,chan],peakVal), decimals=3)
 
                 # Re-plot
                 l = self.lines[chan]
-                l.set_xdata(timeVec)
+                l.set_xdata(timeVecMinutes)
                 l.set_ydata(normCDataMat[:,chan])
 
             # self.plot1.cla()
@@ -1138,7 +1115,7 @@ class GenII_Interface:
             # for chan in self.channelList:
             #     self.plot1.plot(timeVec, normCDataMat, marker = 'o', label = f"Ch {chan}", markersize = 4, fillstyle = 'full')
             #self.plot1.legend("Channel 1", "Channel 2", "Channel 3")
-            self.plot1.set_xlim(-1, timeVec[-1] + 1)
+            self.plot1.set_xlim(-1, timeVecMinutes[-1] + 1)
             self.plot1.set_ylim(0.7, np.nanmax([1.01, np.max(normCDataMat)]))
             self.plot1.set_xlabel("Time (min)")
             self.plot1.set_ylabel("Normalized Permittivity (real)")
@@ -1351,8 +1328,7 @@ class GenII_Interface:
                 self.channelBin = self.channelBin + (1 << i)
             i+=1
         sendData = bytearray('L' + str(self.channelBin) + '\n', 'ascii')
-        self.writeToMCU(sendData, True)
-        return
+        return self.writeToMCU(sendData, True)
 
     def on_close(self):
          if tk.messagebox.askokcancel("Quit", "Do you want to quit the program?"):
