@@ -23,7 +23,8 @@ class GenII_Interface:
     QUEUE_NAME_UIUA = "/ui_uart_message_queue"
     #MY_SIGNAL = signal.SIGUSR2
     TEMPARRAYSIZE = 60
-    DATAVECSIZE = 28
+    N_AVERAGESTOSTORE = 10
+    DATAVECSIZE = 21 + 8*N_AVERAGESTOSTORE
     BATTERYLEVELS = [100, 75, 50, 25, 0]
 
     def __init__(self, root, use_mq = True, device_present = True):
@@ -908,7 +909,7 @@ class GenII_Interface:
         self.btn_text.set(self.measBtnText[1])
 
         # Reinitialize data vectors
-        self.DataMat = np.empty((intrunT, 9))
+        self.DataMat = np.empty((intrunT, 1 + 8*self.N_AVERAGESTOSTORE))
         self.DataMat[:] = np.nan
 
         self.countData = []
@@ -988,33 +989,36 @@ class GenII_Interface:
         useOldData = False
 
         # Process Data Vector
-        CVec = []
-        GVec = []
-
-        try:
-            for C, G in zip(dataVec[1::7], dataVec[2::7]):
-                CVec.append(float(C[:-1]))
-                GVec.append(float(G[:-1]))
-
-        except Exception as e:
-            useOldData = True
-            print("DataVec Format Error, using old vector")
-            print(dataVec)
-        
-        if useOldData:
+        self.timeVec[i-1] = float(dataVec[0])
+        for j in range(self.N_AVERAGESTOSTORE):
+            CVec = []
+            GVec = []
             try:
-                for C, G in zip(self.oldDataVec[1::7], self.oldDataVec[2::7]):
+                for C, G in zip(dataVec[1::7], dataVec[2::7]):
                     CVec.append(float(C[:-1]))
                     GVec.append(float(G[:-1]))
-            except Exception as e:
-                print("Old Vec format error")
-                print(self.oldDataVec)
-                return
 
-        self.timeVec[i-1] = float(dataVec[0])
+            except Exception as e:
+                useOldData = True
+                print("DataVec Format Error, using old vector")
+                print(dataVec)
+            
+            if useOldData:
+                try:
+                    for C, G in zip(self.oldDataVec[1::7], self.oldDataVec[2::7]):
+                        CVec.append(float(C[:-1]))
+                        GVec.append(float(G[:-1]))
+                except Exception as e:
+                    print("Old Vec format error")
+                    print(self.oldDataVec)
+                    return
+
+            for chan in self.channelList:
+                self.DataMat[i-1, j*8 + chan] = CVec[chan]
+                self.DataMat[i-1, j*8 + chan+4] = GVec[chan]
+        
+        # Plot Update
         for chan in self.channelList:
-            self.DataMat[i-1, chan] = CVec[chan]
-            self.DataMat[i-1, chan+4] = GVec[chan]
             l = self.lines[chan]
             l.set_xdata(self.timeVec[0:i])
             l.set_ydata(self.DataMat[0:i, chan])
@@ -1028,15 +1032,17 @@ class GenII_Interface:
         smallMat = self.DataMat[i-1]
         if smallMat.size == 0:
             return
-        smallMatMin= np.min(smallMat[self.channelList+1])
-        smallMatMax= np.max(smallMat[self.channelList+1])
+        smallMatMin= np.min(smallMat[self.channelList])
+        smallMatMax= np.max(smallMat[self.channelList])
         if smallMatMin < self.plotRange[0]:
             self.plotRange[0] = smallMatMin
         if smallMatMax > self.plotRange[1]:
             self.plotRange[1] = smallMatMax
 
+        # Write To File
         if self.csv_writer:
-            dataToWrite = list(map(lambda t: "%0.3f" % t, smallMat))
+            dataToWrite = np.concatenate(self.timeVec, smallMat)
+            dataToWrite = list(map(lambda t: "%0.3f" % t, dataToWrite))
             self.csv_writer.writerow(dataToWrite)
 
         self.plot1.set_xlim(-1, np.floor(self.timeVec[-1]/30 + 1) * 30)
@@ -1130,6 +1136,8 @@ class GenII_Interface:
         if not self.filePath:
             return
         
+        normC_writeStart = (2 + 8*self.N_AVERAGESTOSTORE)
+
         tempFile = "tempFile.csv"
         with open(self.filePath, 'r', newline='') as input_file:
             readerObj = csv.reader(input_file, delimiter=',')
@@ -1152,7 +1160,7 @@ class GenII_Interface:
                     if rowCount < 14 and rowCount > 7:
                         row[1:5] = outputParamTable[rowCount-8]
                     if rowCount > 17:
-                        row[10:14] = normCDataMat[rowCount-18]
+                        row[normC_writeStart:normC_writeStart + 4] = normCDataMat[rowCount-18]
 
                     csv_writer.writerow(row)
                     rowCount = rowCount + 1
