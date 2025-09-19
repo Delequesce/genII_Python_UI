@@ -991,11 +991,12 @@ class GenII_Interface:
 
         # Process Data Vector
         self.timeVec[i-1] = (float(dataVec[0]))
+        skipLength = 5 + self.N_AVERAGESTOSTORE*2
         for j in range(self.N_AVERAGESTOSTORE):
             CVec = []
             GVec = []
             try:
-                for C, G in zip(dataVec[1::7], dataVec[2::7]):
+                for C, G in zip(dataVec[1::skipLength], dataVec[2::skipLength]):
                     CVec.append(float(C[:-1]))
                     GVec.append(float(G[:-1]))
 
@@ -1006,7 +1007,7 @@ class GenII_Interface:
             
             if useOldData:
                 try:
-                    for C, G in zip(self.oldDataVec[1::7], self.oldDataVec[2::7]):
+                    for C, G in zip(self.oldDataVec[1::skipLength], self.oldDataVec[2::skipLength]):
                         CVec.append(float(C[:-1]))
                         GVec.append(float(G[:-1]))
                 except Exception as e:
@@ -1046,7 +1047,7 @@ class GenII_Interface:
             dataToWrite = list(map(lambda t: "%0.3f" % t, dataToWrite))
             self.csv_writer.writerow(dataToWrite)
 
-        self.plot1.set_xlim(-1, np.floor(self.timeVec[-1]/30 + 1) * 30)
+        self.plot1.set_xlim(-1, np.floor(self.timeVec[i-1]/30 + 1) * 30)
         self.plot1.set_ylim(self.plotRange[0]-1, self.plotRange[1]+1)
         #self.plot1.set_ylim(0, 400)
 
