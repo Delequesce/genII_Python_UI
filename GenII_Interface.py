@@ -991,7 +991,7 @@ class GenII_Interface:
 
         # Process Data Vector
         self.timeVec[i-1] = (float(dataVec[0]))
-        skipLength = 5 + self.N_AVERAGESTOSTORE*2
+        skipLength = self.N_AVERAGESTOSTORE*2
         for j in range(self.N_AVERAGESTOSTORE):
             CVec = []
             GVec = []
@@ -1061,11 +1061,12 @@ class GenII_Interface:
 
 
         # Set Output params if different/time
-
+        paramOffset = self.N_AVERAGESTOSTORE*8 + 1
+        multLength = 5
         for chan in self.channelList:
-            self.str_tpeak_est[chan].set(dataVec[7*chan+3])
-            self.str_deltaEps_est[chan].set(dataVec[7*chan+4])
-            self.str_smax_est[chan].set(dataVec[7*chan+6])
+            self.str_tpeak_est[chan].set(dataVec[multLength*chan+paramOffset])
+            self.str_deltaEps_est[chan].set(dataVec[multLength*chan+paramOffset + 1])
+            self.str_smax_est[chan].set(dataVec[multLength*chan+paramOffset + 3])
 
         #time_elapsed = time.perf_counter() - start_time
         #print(f"time_elapsed: {time_elapsed:0.3f}")
