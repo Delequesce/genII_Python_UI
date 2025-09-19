@@ -911,6 +911,7 @@ class GenII_Interface:
         # Reinitialize data vectors
         self.DataMat = np.empty((intrunT, 1 + 8*self.N_AVERAGESTOSTORE))
         self.DataMat[:] = np.nan
+        self.timeVec = np.zeros((intrunT, 1))
 
         self.countData = []
         self.redrawCounter = 10
@@ -989,7 +990,7 @@ class GenII_Interface:
         useOldData = False
 
         # Process Data Vector
-        self.timeVec[i-1] = float(dataVec[0])
+        self.timeVec[i-1] = (float(dataVec[0]))
         for j in range(self.N_AVERAGESTOSTORE):
             CVec = []
             GVec = []
@@ -1041,7 +1042,7 @@ class GenII_Interface:
 
         # Write To File
         if self.csv_writer:
-            dataToWrite = np.concatenate(self.timeVec, smallMat)
+            dataToWrite = np.concatenate((self.timeVec, smallMat), axis=1)
             dataToWrite = list(map(lambda t: "%0.3f" % t, dataToWrite))
             self.csv_writer.writerow(dataToWrite)
 
