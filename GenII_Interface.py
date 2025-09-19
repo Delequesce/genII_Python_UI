@@ -1042,7 +1042,7 @@ class GenII_Interface:
 
         # Write To File
         if self.csv_writer:
-            dataToWrite = np.concatenate((self.timeVec, smallMat), axis=1)
+            dataToWrite = np.concatenate((self.timeVec[i-1], smallMat))
             dataToWrite = list(map(lambda t: "%0.3f" % t, dataToWrite))
             self.csv_writer.writerow(dataToWrite)
 
