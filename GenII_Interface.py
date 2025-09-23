@@ -529,14 +529,15 @@ class GenII_Interface:
             return 1
         
         # Wait fixed period for MCU to respond
-        time.sleep(0.5)
+        temp = self.mq_inbox.current_messages
+        while temp < 1:
+            temp = self.mq_inbox.current_messages
         
         # Go through each new message and see if any are acknowledges
-        while self.mq_inbox.current_messages:
-            response, priority = self.mq_inbox.receive()
-            if response == b'K':
-                print("Acknowledge Received!")
-                valid = 1
+        response, priority = self.mq_inbox.receive()
+        if response == b'K':
+            print("Acknowledge Received!")
+            valid = 1
         
         # Re-enable mq checking after 200 msec
         if mqTask:
@@ -996,7 +997,7 @@ class GenII_Interface:
             CVec = []
             GVec = []
             try:
-                for C, G in zip(dataVec[1::skipLength], dataVec[2::skipLength]):
+                for C, G in zip(dataVec[(1+2*j)::skipLength], dataVec[(2+2*j)::skipLength]):
                     CVec.append(float(C[:-1]))
                     GVec.append(float(G[:-1]))
 
@@ -1007,7 +1008,7 @@ class GenII_Interface:
             
             if useOldData:
                 try:
-                    for C, G in zip(self.oldDataVec[1::skipLength], self.oldDataVec[2::skipLength]):
+                    for C, G in zip(self.oldDataVec[(1+2*j)::skipLength], self.oldDataVec[(2+2*j)::skipLength]):
                         CVec.append(float(C[:-1]))
                         GVec.append(float(G[:-1]))
                 except Exception as e:
