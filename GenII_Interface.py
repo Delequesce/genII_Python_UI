@@ -23,7 +23,7 @@ class GenII_Interface:
     QUEUE_NAME_UIUA = "/ui_uart_message_queue"
     #MY_SIGNAL = signal.SIGUSR2
     TEMPARRAYSIZE = 60
-    N_AVERAGESTOSTORE = 10
+    N_AVERAGESTOSTORE = 1
     DATAVECSIZE = 21 + 8*N_AVERAGESTOSTORE
     BATTERYLEVELS = [100, 75, 50, 25, 0]
 
