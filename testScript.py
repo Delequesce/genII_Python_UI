@@ -33,7 +33,8 @@ class TestingScript:
         self.app.DataMat = np.random.rand(N, 8)
         self.app.countData = range(N+1)
         self.app.filePath = "NewDataFile.csv"
-        self.app.isMeasuring = True
+        self.app.isMeasuring = False
+        self.app.N_AVERAGESTOSTORE = 1
 
         os.system(f"cp DataFileTemplate.csv {self.app.filePath}")
 
@@ -45,6 +46,14 @@ class TestingScript:
             #print(e)
         print("Random Data Matrix")
         print(self.app.DataMat)
+
+    def cloudUploadTest(self):
+        filePath = os.path.join(os.getcwd(), "NewDataFile.csv")
+        self.app.drive, self.app.folderId = self.app.cloudUploadSetup()
+        if self.app.drive:
+            self.app.cloudUpload(filePath)
+
+        return
 
     def test_fullMeasurement(self):
         self.app.noSerial = True
@@ -60,7 +69,8 @@ class TestingScript:
 
 if __name__ == "__main__":
     testObj = TestingScript()
-    testObj.observeInterface()
+    testObj.cloudUploadTest()
+    #testObj.observeInterface()
     #testObj.setUp()
     #testObj.test_finishTest()
     #testObj.test_fullMeasurement()

@@ -15,6 +15,8 @@ import signal
 import posix_ipc
 import datetime
 import os
+from pydrive2.auth import GoogleAuth
+from pydrive2.drive import GoogleDrive
 
 class GenII_Interface:
 
@@ -75,6 +77,9 @@ class GenII_Interface:
         self.frameList.append(self.createParamWindow(root))
         self.frameList.append(self.creatTestRunWindow(root))
         self.frameList.append(self.createResultsWindow(root))
+
+        # Cloud Upload
+        self.drive, self.folderId = self.cloudUploadSetup()
 
         # Flags
         self.isHeating = 0
@@ -1180,6 +1185,11 @@ class GenII_Interface:
         os.remove(self.filePath)
         os.rename(tempFile, self.filePath)
 
+        # Upload to Cloud
+        self.drive, self.folderId = self.cloudUploadSetup()
+        if self.drive:
+            self.cloudUpload(self.filePath)
+
         tk.messagebox.showinfo(title="Test Finished", message="Test Completed Successfully")
 
         return
@@ -1341,6 +1351,74 @@ class GenII_Interface:
             i+=1
         sendData = bytearray('L' + str(self.channelBin) + '\n', 'ascii')
         return self.writeToMCU(sendData, True)
+
+
+    def getFolderId(self, drive, folderName):
+        folderId = None
+        print("Retrieving Folder ID of folder %s" % folderName)
+        fileList = drive.ListFile(
+            {'q': "'0AJLAae_J9m91Uk9PVA' in parents and trashed=false",
+            #'corpora': "MohseniLabDataDrive", 
+            #'teamDriveId': "XXX",
+            'includeTeamDriveItems': "true",
+            'supportsTeamDrives': "true"
+            }).GetList()
+        for file in fileList:
+            print('Title: %s, ID: %s' % (file['title'], file['id']))
+            # Get the folder ID that you want
+            if(file['title'] == folderName):
+                print("Folder Located")
+                folderId = file['id']
+                return folderId
+
+    def cloudUploadSetup(self):
+
+        # Default Return Values
+        drive = None
+        folderId = None
+
+        # Authenticate with existing Drive
+        gauth = GoogleAuth()
+        gauth.LoadCredentialsFile("mycredentials.txt")
+        if gauth.credentials is None:
+            # Authenticate if file doesn't exist. This uses client_secrets.json
+            gauth.LocalWebserverAuth()
+        elif gauth.access_token_expired:
+            # Refresh if expired
+            gauth.Refresh()
+        else:
+            # Initialize saved credentials
+            gauth.Authorize()
+
+        # Save current credentials to a file
+        gauth.SaveCredentialsFile("mycredentials.txt")
+
+        # Access drive using authorization token
+        drive = GoogleDrive(gauth)
+        print("Authentication Sucessful")
+
+        # Get Folder ID
+        folderName = "GenII"
+        folderId = self.getFolderId(drive, folderName)
+        if folderId is None:
+            print("No Folder matching name could be found")
+        
+        return drive, folderId
+    
+
+    def cloudUpload(self, filePath):
+        fileName = filePath.split('/')[-1]
+        gfile = self.drive.CreateFile({'title': fileName, 'parents': [{'id': self.folderId}]})
+        gfile.SetContentFile(filePath)
+        try:
+            gfile.Upload()
+        except Exception as e:
+            print("Upload Failed")
+            return
+        
+        print("Upload Successful")
+        return 
+        
 
     def on_close(self):
          if tk.messagebox.askokcancel("Quit", "Do you want to quit the program?"):
